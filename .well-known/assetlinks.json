@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.novogarden.app",
+    "sha256_cert_fingerprints": ["74:E2:BC:5C:92:93:30:C5:EA:BA:1A:CC:1E:72:CF:B3:5B:2C:77:C4:B8:49:E9:FA:A2:EA:25:92:83:A2:7E:94"]
+  }
+}]
