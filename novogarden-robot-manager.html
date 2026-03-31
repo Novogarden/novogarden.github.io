@@ -1177,10 +1177,6 @@ async function loginWithCallbackUrl() {
 }
 
 async function loginWithGoogle() {
-  if (CONFIG.CLIENT_ID === 'VOTRE_CLIENT_ID') {
-    showToast('CLIENT_ID non configuré — voir le fichier', 'red');
-    return;
-  }
   const verifier = generateCodeVerifier();
   const challenge = await generateCodeChallenge(verifier);
   sessionStorage.setItem('pkce_verifier', verifier);
@@ -1188,13 +1184,22 @@ async function loginWithGoogle() {
   const params = new URLSearchParams({
     client_id:             CONFIG.CLIENT_ID,
     response_type:         'code',
-    scope:                 'openid email profile',
+    scope:                 'openid aws.cognito.signin.user.admin',
     redirect_uri:          CONFIG.REDIRECT_URI,
     code_challenge:        challenge,
     code_challenge_method: 'S256',
     identity_provider:     'Google',
   });
-  window.location.href = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
+  const url = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
+
+  // Ouvrir dans un nouvel onglet — notre app reste ouverte
+  const popup = window.open(url, '_blank');
+  if (!popup) {
+    // Bloqueur de popup : rediriger quand même
+    window.location.href = url;
+    return;
+  }
+  showToast('Connectez-vous dans le nouvel onglet, puis collez l\'URL myapp://');
 }
 
 async function exchangeCode(code) {
