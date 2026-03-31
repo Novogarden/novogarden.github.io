@@ -1,0 +1,2445 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#7DB532">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Novogarden – Robot Manager</title>
+
+<!-- ============================================================
+     CONFIGURATION — à compléter avec les valeurs Lymow
+     ============================================================ -->
+<script>
+const CONFIG = {
+  // Cognito User Pool
+  COGNITO_DOMAIN:   'https://eu-auth.lymow.com',
+  CLIENT_ID:        '3h1sqv3hishjiofbv8giskjgb0',
+  USER_POOL_ID:     'eu-west-1_6qNPbnrrd',
+  IDENTITY_POOL_ID: 'eu-west-1:VOTRE_IDENTITY_POOL_ID', // ← à compléter si disponible
+  REGION:           'eu-west-1',
+
+  // AWS IoT Core — capturé via PCAPdroid
+  IOT_ENDPOINT: 'a3j5zqqo5iuph9-ats.iot.eu-west-1.amazonaws.com',
+
+  // redirect_uri enregistrée dans Cognito (scheme natif Android)
+  REDIRECT_URI: 'myapp://callback/',
+
+  // Numéro de série du robot (saisi dans Réglages ou récupéré via MQTT)
+  ROBOT_SERIAL: null,
+};
+</script>
+
+<!-- AWS SDK (Cognito Identity + IoT SigV4) -->
+<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6/dist/amazon-cognito-identity.min.js"></script>
+<!-- MQTT.js over WebSocket -->
+<script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
+<!-- Leaflet.js — carte interactive -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   CHARTE NOVOGARDEN
+   ============================================================ */
+:root {
+  --green:       #7DB532;
+  --dark-green:  #5a8e1e;
+  --cream:       #FAF9F5;
+  --dark:        #14140F;
+  --grey:        #808080;
+  --grey-light:  #E8E6E6;
+  --radius:      16px;
+  --shadow:      0 4px 20px rgba(125,181,50,0.15);
+  --red:         #e53935;
+  --orange:      #FF8C00;
+  --blue:        #1a73e8;
+}
+* { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserrat',sans-serif; font-weight:600; color:var(--dark); overflow:hidden; }
+
+/* SHELL */
+#app { display:flex; flex-direction:column; height:100%; height:100dvh; max-width:430px; margin:0 auto; background:var(--cream); box-shadow:0 0 40px rgba(0,0,0,0.2); position:relative; overflow:hidden; }
+
+/* SCREENS */
+.screen { display:none; flex-direction:column; height:100%; overflow:hidden; }
+.screen.active { display:flex; }
+.content { flex:1; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; padding-bottom:20px; }
+
+/* TOPBAR */
+.topbar { background:linear-gradient(135deg,#8dc83a 0%,var(--dark-green) 100%); padding:48px 18px 14px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; color:white; }
+.logo-row { display:flex; align-items:center; gap:10px; }
+.logo-icon { width:32px; height:32px; background:rgba(255,255,255,0.25); border-radius:10px; display:flex; align-items:center; justify-content:center; }
+.logo-icon svg { width:20px; height:20px; fill:white; }
+.logo-name { font-size:17px; font-weight:800; color:white; line-height:1.1; }
+.logo-sub { font-size:10px; font-weight:500; opacity:0.8; }
+.topbar-right { display:flex; align-items:center; gap:8px; }
+.icon-btn { width:36px; height:36px; background:rgba(255,255,255,0.2); border-radius:12px; display:flex; align-items:center; justify-content:center; border:none; cursor:pointer; position:relative; }
+.icon-btn svg { width:18px; height:18px; fill:white; }
+.badge { position:absolute; top:-4px; right:-4px; background:var(--red); color:white; font-size:8px; font-weight:800; width:15px; height:15px; border-radius:50%; display:flex; align-items:center; justify-content:center; }
+
+/* BOTTOM NAV */
+.bottom-nav { background:white; border-top:1px solid var(--grey-light); display:flex; padding:8px 0 20px; flex-shrink:0; }
+.nav-item { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; padding:4px; border:none; background:none; font-family:'Montserrat',sans-serif; }
+.nav-item svg { width:22px; height:22px; fill:var(--grey); }
+.nav-item.active svg { fill:var(--green); }
+.nav-label { font-size:9px; font-weight:700; color:var(--grey); text-transform:uppercase; letter-spacing:0.5px; }
+.nav-item.active .nav-label { color:var(--green); }
+
+/* ============================================================
+   ÉCRAN LOGIN
+   ============================================================ */
+#login-screen { background:linear-gradient(160deg,#8dc83a 0%,var(--dark-green) 60%,#1a3a00 100%); justify-content:center; align-items:center; padding:40px 30px; }
+.login-logo { text-align:center; margin-bottom:48px; }
+.login-logo .big-icon { width:80px; height:80px; background:rgba(255,255,255,0.2); border-radius:24px; display:flex; align-items:center; justify-content:center; margin:0 auto 16px; }
+.login-logo .big-icon svg { width:44px; height:44px; fill:white; }
+.login-logo h1 { font-size:26px; font-weight:800; color:white; }
+.login-logo p { font-size:13px; color:rgba(255,255,255,0.75); font-weight:500; margin-top:4px; }
+.login-card { background:white; border-radius:24px; padding:28px 24px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
+.login-card h2 { font-size:18px; font-weight:800; margin-bottom:6px; }
+.login-card p { font-size:12px; color:var(--grey); font-weight:500; margin-bottom:24px; line-height:1.5; }
+.btn-google { width:100%; display:flex; align-items:center; justify-content:center; gap:12px; background:#fff; border:2px solid var(--grey-light); border-radius:14px; padding:14px; cursor:pointer; font-size:14px; font-weight:700; font-family:'Montserrat',sans-serif; color:var(--dark); transition:all 0.2s; margin-bottom:12px; }
+.btn-google:hover { border-color:var(--green); background:#f8fff0; }
+.btn-google svg { width:22px; height:22px; flex-shrink:0; }
+.login-note { font-size:10px; color:var(--grey); text-align:center; margin-top:16px; line-height:1.6; font-weight:500; }
+
+/* ============================================================
+   ÉCRAN DASHBOARD
+   ============================================================ */
+.dash-header { background:linear-gradient(135deg,#8dc83a 0%,var(--dark-green) 100%); padding:20px 18px 50px; color:white; position:relative; }
+.dash-header::after { content:''; position:absolute; bottom:-20px; left:0; right:0; height:40px; background:var(--cream); border-radius:24px 24px 0 0; }
+.robot-card { background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); border-radius:20px; padding:16px; display:flex; align-items:center; gap:16px; margin-top:8px; }
+.robot-avatar { width:60px; height:60px; background:rgba(255,255,255,0.2); border-radius:16px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.robot-avatar svg { width:36px; height:36px; fill:white; }
+.robot-info h2 { font-size:16px; font-weight:800; }
+.robot-info p { font-size:11px; opacity:0.8; font-weight:500; }
+.status-pill { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:10px; font-weight:700; margin-top:6px; }
+.status-pill .dot { width:7px; height:7px; border-radius:50%; }
+.status-mowing { background:rgba(125,181,50,0.25); color:#c8ff60; }
+.status-mowing .dot { background:#c8ff60; animation:pulse 1.5s infinite; }
+.status-dock { background:rgba(255,255,255,0.15); color:rgba(255,255,255,0.9); }
+.status-dock .dot { background:rgba(255,255,255,0.7); }
+.status-error { background:rgba(229,57,53,0.3); color:#ffaaaa; }
+.status-error .dot { background:#ff6b6b; }
+.status-idle { background:rgba(255,140,0,0.25); color:#ffd080; }
+.status-idle .dot { background:#ffd080; }
+.status-offline { background:rgba(128,128,128,0.25); color:rgba(255,255,255,0.6); }
+.status-offline .dot { background:rgba(255,255,255,0.4); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.dash-body { padding:32px 18px 16px; }
+.section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--grey); margin-bottom:12px; }
+
+/* Stats row */
+.stats-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:20px; }
+.stat-card { background:white; border-radius:var(--radius); padding:14px 12px; text-align:center; box-shadow:var(--shadow); }
+.stat-card .stat-val { font-size:22px; font-weight:800; color:var(--green); line-height:1; }
+.stat-card .stat-val.red { color:var(--red); }
+.stat-card .stat-val.orange { color:var(--orange); }
+.stat-card .stat-lbl { font-size:9px; font-weight:600; color:var(--grey); text-transform:uppercase; letter-spacing:0.5px; margin-top:4px; }
+
+/* Quick actions */
+.quick-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px; }
+.action-btn { background:white; border-radius:var(--radius); padding:16px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; border:2px solid transparent; cursor:pointer; box-shadow:var(--shadow); font-family:'Montserrat',sans-serif; transition:all 0.2s; }
+.action-btn:active { transform:scale(0.97); }
+.action-btn.primary { background:var(--green); color:white; }
+.action-btn.primary svg { fill:white; }
+.action-btn.danger { border-color:var(--red); }
+.action-btn .a-icon { width:36px; height:36px; border-radius:10px; background:rgba(125,181,50,0.1); display:flex; align-items:center; justify-content:center; }
+.action-btn.primary .a-icon { background:rgba(255,255,255,0.2); }
+.action-btn.danger .a-icon { background:rgba(229,57,53,0.1); }
+.action-btn svg { width:20px; height:20px; fill:var(--green); }
+.action-btn.danger svg { fill:var(--red); }
+.action-btn .a-label { font-size:12px; font-weight:700; }
+.action-btn .a-sub { font-size:10px; font-weight:500; color:var(--grey); }
+.action-btn.primary .a-sub { color:rgba(255,255,255,0.8); }
+
+/* Activity feed */
+.activity-item { display:flex; align-items:flex-start; gap:12px; padding:10px 0; border-bottom:1px solid var(--grey-light); }
+.activity-item:last-child { border-bottom:none; }
+.act-dot { width:8px; height:8px; border-radius:50%; background:var(--green); flex-shrink:0; margin-top:5px; }
+.act-dot.red { background:var(--red); }
+.act-dot.orange { background:var(--orange); }
+.act-dot.grey { background:var(--grey-light); }
+.act-text { font-size:12px; font-weight:600; line-height:1.4; }
+.act-time { font-size:10px; font-weight:500; color:var(--grey); margin-top:2px; }
+
+/* ============================================================
+   ÉCRAN CONTRÔLES
+   ============================================================ */
+.ctrl-section { padding:20px 18px; }
+.ctrl-section h3 { font-size:13px; font-weight:700; margin-bottom:14px; color:var(--grey); text-transform:uppercase; letter-spacing:0.5px; }
+.ctrl-main-btns { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:24px; }
+.ctrl-btn { background:white; border-radius:var(--radius); padding:18px 10px 14px; display:flex; flex-direction:column; align-items:center; gap:8px; border:none; cursor:pointer; box-shadow:var(--shadow); font-family:'Montserrat',sans-serif; transition:all 0.2s; }
+.ctrl-btn:active { transform:scale(0.95); }
+.ctrl-btn svg { width:28px; height:28px; }
+.ctrl-btn .c-lbl { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+.ctrl-btn.go { background:var(--green); }
+.ctrl-btn.go svg { fill:white; }
+.ctrl-btn.go .c-lbl { color:white; }
+.ctrl-btn.stop { background:var(--red); }
+.ctrl-btn.stop svg { fill:white; }
+.ctrl-btn.stop .c-lbl { color:white; }
+.ctrl-btn.home-btn { background:#1a73e8; }
+.ctrl-btn.home-btn svg { fill:white; }
+.ctrl-btn.home-btn .c-lbl { color:white; }
+.ctrl-btn.pause-btn svg { fill:var(--orange); }
+.ctrl-btn.pause-btn .c-lbl { color:var(--orange); }
+
+/* Joystick zone */
+.joystick-container { background:white; border-radius:20px; padding:20px; box-shadow:var(--shadow); margin-bottom:24px; display:flex; flex-direction:column; align-items:center; gap:16px; }
+.joystick-grid { display:grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:1fr 1fr 1fr; gap:8px; width:180px; height:180px; }
+.j-btn { background:var(--cream); border:none; border-radius:12px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-family:'Montserrat',sans-serif; transition:all 0.15s; }
+.j-btn:active { background:var(--green); transform:scale(0.92); }
+.j-btn:active svg { fill:white; }
+.j-btn svg { width:22px; height:22px; fill:var(--dark); }
+.j-btn.center { background:rgba(229,57,53,0.1); }
+.j-btn.center svg { fill:var(--red); }
+.j-btn.empty { background:transparent; pointer-events:none; }
+.speed-row { display:flex; align-items:center; gap:12px; width:100%; }
+.speed-row label { font-size:11px; font-weight:700; white-space:nowrap; color:var(--grey); }
+.speed-slider { flex:1; -webkit-appearance:none; height:6px; border-radius:3px; background:var(--grey-light); outline:none; }
+.speed-slider::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:var(--green); cursor:pointer; }
+.speed-val { font-size:12px; font-weight:700; color:var(--green); min-width:32px; text-align:right; }
+
+/* Zone selector */
+.zone-chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+.zone-chip { padding:8px 14px; border-radius:20px; font-size:11px; font-weight:700; border:2px solid var(--grey-light); background:white; cursor:pointer; font-family:'Montserrat',sans-serif; transition:all 0.2s; color:var(--dark); }
+.zone-chip.active { border-color:var(--green); background:rgba(125,181,50,0.1); color:var(--green); }
+
+/* ============================================================
+   ÉCRAN TERRAINS
+   ============================================================ */
+.terrain-list { padding:16px 18px; }
+.terrain-card { background:white; border-radius:var(--radius); margin-bottom:12px; overflow:hidden; box-shadow:var(--shadow); }
+.terrain-header { padding:14px 16px; display:flex; align-items:center; gap:12px; cursor:pointer; }
+.terrain-color { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+.terrain-name { font-size:14px; font-weight:700; flex:1; }
+.terrain-area { font-size:11px; color:var(--grey); font-weight:500; }
+.terrain-arrow { width:20px; height:20px; fill:var(--grey); transition:transform 0.2s; }
+.terrain-card.expanded .terrain-arrow { transform:rotate(180deg); }
+.terrain-body { display:none; padding:0 16px 16px; border-top:1px solid var(--grey-light); }
+.terrain-card.expanded .terrain-body { display:block; }
+.terrain-meta { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; padding-top:14px; }
+.t-meta-item { font-size:11px; }
+.t-meta-item .lbl { color:var(--grey); font-weight:500; margin-bottom:2px; }
+.t-meta-item .val { font-weight:700; }
+.terrain-actions { display:flex; gap:8px; }
+.t-btn { flex:1; padding:10px; border-radius:10px; border:none; cursor:pointer; font-size:11px; font-weight:700; font-family:'Montserrat',sans-serif; transition:all 0.2s; }
+.t-btn:active { transform:scale(0.97); }
+.t-btn.primary { background:var(--green); color:white; }
+.t-btn.outline { background:white; border:2px solid var(--grey-light); color:var(--dark); }
+.t-btn.outline:hover { border-color:var(--green); color:var(--green); }
+.add-terrain-btn { display:flex; align-items:center; justify-content:center; gap:10px; padding:16px; border:2px dashed var(--grey-light); border-radius:var(--radius); cursor:pointer; background:none; font-size:13px; font-weight:700; color:var(--grey); font-family:'Montserrat',sans-serif; width:100%; transition:all 0.2s; }
+.add-terrain-btn:hover { border-color:var(--green); color:var(--green); }
+.add-terrain-btn svg { width:20px; height:20px; fill:currentColor; }
+
+/* ============================================================
+   ÉCRAN PLANNING
+   ============================================================ */
+.planning-pad { padding:16px 18px; }
+.week-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+.week-nav h3 { font-size:14px; font-weight:700; }
+.week-nav button { background:white; border:2px solid var(--grey-light); border-radius:10px; width:34px; height:34px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.week-nav button svg { width:16px; height:16px; fill:var(--dark); }
+.week-days { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin-bottom:20px; }
+.day-cell { display:flex; flex-direction:column; align-items:center; gap:4px; }
+.day-lbl { font-size:9px; font-weight:700; text-transform:uppercase; color:var(--grey); }
+.day-num { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; cursor:pointer; }
+.day-num.today { background:var(--green); color:white; }
+.day-num.has-event { background:rgba(125,181,50,0.15); color:var(--green); }
+.sched-list { display:flex; flex-direction:column; gap:10px; }
+.sched-item { background:white; border-radius:var(--radius); padding:14px 16px; display:flex; align-items:center; gap:12px; box-shadow:var(--shadow); }
+.sched-left { flex:1; }
+.sched-time { font-size:13px; font-weight:800; color:var(--green); }
+.sched-terrain { font-size:11px; font-weight:600; color:var(--dark); margin-top:2px; }
+.sched-zone { font-size:10px; color:var(--grey); font-weight:500; }
+.sched-toggle { width:44px; height:26px; background:var(--green); border-radius:13px; position:relative; cursor:pointer; flex-shrink:0; border:none; transition:background 0.2s; }
+.sched-toggle::after { content:''; position:absolute; width:20px; height:20px; background:white; border-radius:50%; top:3px; right:3px; transition:right 0.2s; }
+.sched-toggle.off { background:var(--grey-light); }
+.sched-toggle.off::after { right:auto; left:3px; }
+.sched-del { width:32px; height:32px; background:rgba(229,57,53,0.08); border-radius:10px; display:flex; align-items:center; justify-content:center; border:none; cursor:pointer; }
+.sched-del svg { width:16px; height:16px; fill:var(--red); }
+.add-sched-btn { display:flex; align-items:center; justify-content:center; gap:10px; padding:16px; border:2px dashed var(--grey-light); border-radius:var(--radius); cursor:pointer; background:none; font-size:13px; font-weight:700; color:var(--grey); font-family:'Montserrat',sans-serif; width:100%; margin-top:10px; transition:all 0.2s; }
+.add-sched-btn:hover { border-color:var(--green); color:var(--green); }
+.add-sched-btn svg { width:20px; height:20px; fill:currentColor; }
+
+/* ============================================================
+   MODALES
+   ============================================================ */
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:flex-end; justify-content:center; max-width:430px; margin:0 auto; }
+.modal-overlay.open { display:flex; }
+.modal { background:white; border-radius:24px 24px 0 0; padding:24px; width:100%; max-height:85vh; overflow-y:auto; }
+.modal-handle { width:40px; height:4px; background:var(--grey-light); border-radius:2px; margin:0 auto 20px; }
+.modal h3 { font-size:17px; font-weight:800; margin-bottom:6px; }
+.modal p { font-size:12px; color:var(--grey); font-weight:500; margin-bottom:20px; line-height:1.5; }
+.form-field { margin-bottom:14px; }
+.form-field label { display:block; font-size:11px; font-weight:700; color:var(--grey); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+.form-field input, .form-field select { width:100%; padding:12px 14px; border:2px solid var(--grey-light); border-radius:12px; font-size:13px; font-weight:600; font-family:'Montserrat',sans-serif; color:var(--dark); background:white; outline:none; transition:border-color 0.2s; -webkit-appearance:none; }
+.form-field input:focus, .form-field select:focus { border-color:var(--green); }
+.modal-btns { display:flex; gap:10px; margin-top:20px; }
+.modal-btn { flex:1; padding:14px; border-radius:14px; border:none; font-size:13px; font-weight:700; font-family:'Montserrat',sans-serif; cursor:pointer; transition:all 0.2s; }
+.modal-btn:active { transform:scale(0.97); }
+.modal-btn.primary { background:var(--green); color:white; }
+.modal-btn.secondary { background:var(--grey-light); color:var(--dark); }
+.days-picker { display:flex; gap:6px; margin-bottom:4px; }
+.day-pick { width:36px; height:36px; border-radius:50%; border:2px solid var(--grey-light); background:white; font-size:11px; font-weight:700; cursor:pointer; font-family:'Montserrat',sans-serif; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
+.day-pick.sel { background:var(--green); border-color:var(--green); color:white; }
+
+/* ============================================================
+   NOTIFICATION TOAST
+   ============================================================ */
+.toast { position:fixed; top:16px; left:50%; transform:translateX(-50%) translateY(-80px); background:#14140F; color:white; padding:10px 20px; border-radius:20px; font-size:12px; font-weight:700; z-index:2000; transition:transform 0.3s ease; white-space:nowrap; max-width:calc(100% - 40px); text-align:center; }
+.toast.show { transform:translateX(-50%) translateY(0); }
+.toast.green { background:var(--green); }
+.toast.red { background:var(--red); }
+
+/* ============================================================
+   CONNEXION MQTT — indicateur
+   ============================================================ */
+.mqtt-bar { background:rgba(0,0,0,0.2); display:flex; align-items:center; gap:6px; padding:4px 18px; font-size:10px; font-weight:600; color:rgba(255,255,255,0.8); flex-shrink:0; }
+.mqtt-dot { width:6px; height:6px; border-radius:50%; background:var(--grey); }
+.mqtt-dot.connected { background:#c8ff60; }
+.mqtt-dot.connecting { background:var(--orange); animation:pulse 1s infinite; }
+.mqtt-dot.error { background:var(--red); }
+
+/* Ecran vide */
+.empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 24px; text-align:center; gap:12px; }
+.empty-state svg { width:56px; height:56px; fill:var(--grey-light); }
+.empty-state h4 { font-size:15px; font-weight:700; }
+.empty-state p { font-size:12px; color:var(--grey); font-weight:500; line-height:1.5; }
+
+/* Config setup card */
+.setup-card { background:rgba(255,140,0,0.08); border:2px solid rgba(255,140,0,0.3); border-radius:var(--radius); padding:16px; margin:16px 18px; display:flex; gap:12px; align-items:flex-start; }
+.setup-card svg { width:20px; height:20px; fill:var(--orange); flex-shrink:0; margin-top:2px; }
+.setup-card .sc-text { font-size:11px; font-weight:600; line-height:1.6; color:var(--dark); }
+.setup-card .sc-text strong { color:var(--orange); }
+
+/* ============================================================
+   ÉCRAN CARTE
+   ============================================================ */
+#map-container { width:100%; flex:1; min-height:0; position:relative; }
+#leaflet-map { width:100%; height:100%; }
+.map-toolbar { position:absolute; top:10px; right:10px; z-index:1000; display:flex; flex-direction:column; gap:8px; }
+.map-tool-btn { width:40px; height:40px; background:white; border:none; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; cursor:pointer; font-family:'Montserrat',sans-serif; transition:all 0.2s; }
+.map-tool-btn svg { width:20px; height:20px; fill:var(--dark); }
+.map-tool-btn.active { background:var(--green); }
+.map-tool-btn.active svg { fill:white; }
+.map-tool-btn.danger-tool { }
+.map-tool-btn.danger-tool svg { fill:var(--red); }
+.map-tool-btn.blue-tool svg { fill:var(--blue); }
+.map-tool-btn.orange-tool svg { fill:var(--orange); }
+.map-bottom-bar { position:absolute; bottom:0; left:0; right:0; z-index:1000; background:white; border-radius:20px 20px 0 0; padding:14px 16px 10px; display:flex; flex-direction:column; gap:10px; box-shadow:0 -4px 20px rgba(0,0,0,0.1); }
+.map-bottom-bar h4 { font-size:13px; font-weight:700; }
+.map-legend { display:flex; gap:12px; flex-wrap:wrap; }
+.map-legend-item { display:flex; align-items:center; gap:6px; font-size:11px; font-weight:600; }
+.map-legend-dot { width:12px; height:12px; border-radius:3px; }
+.map-terrain-select { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; }
+.map-terrain-chip { padding:6px 14px; border-radius:20px; font-size:11px; font-weight:700; border:2px solid var(--grey-light); background:white; cursor:pointer; white-space:nowrap; flex-shrink:0; font-family:'Montserrat',sans-serif; }
+.map-terrain-chip.active { border-color:var(--green); background:rgba(125,181,50,0.1); color:var(--green); }
+.map-rows-bar { display:flex; align-items:center; gap:10px; }
+.map-rows-bar label { font-size:11px; font-weight:700; color:var(--grey); white-space:nowrap; }
+.map-rows-bar input[type=range] { flex:1; -webkit-appearance:none; height:5px; border-radius:3px; background:var(--grey-light); }
+.map-rows-bar input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:var(--green); cursor:pointer; }
+.map-rows-bar span { font-size:12px; font-weight:700; color:var(--green); min-width:28px; }
+.map-hint { position:absolute; top:60px; left:50%; transform:translateX(-50%); z-index:1001; background:rgba(0,0,0,0.75); color:white; font-size:11px; font-weight:600; padding:6px 14px; border-radius:20px; white-space:nowrap; pointer-events:none; display:none; }
+.map-hint.show { display:block; }
+.rtk-badge { position:absolute; top:10px; left:10px; z-index:1000; background:white; border-radius:12px; padding:8px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.2); display:flex; align-items:center; gap:8px; font-size:11px; font-weight:700; cursor:pointer; }
+.rtk-dot { width:8px; height:8px; border-radius:50%; background:var(--grey); }
+.rtk-dot.fixed { background:#00c853; animation:pulse 2s infinite; }
+.rtk-dot.float { background:var(--orange); animation:pulse 1s infinite; }
+
+/* ============================================================
+   ÉCRAN FLOTTE
+   ============================================================ */
+.fleet-list { padding:16px 18px; }
+.robot-fleet-card { background:white; border-radius:var(--radius); margin-bottom:12px; padding:16px; box-shadow:var(--shadow); display:flex; align-items:center; gap:14px; }
+.robot-fleet-avatar { width:52px; height:52px; background:linear-gradient(135deg,#8dc83a,var(--dark-green)); border-radius:14px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.robot-fleet-avatar svg { width:28px; height:28px; fill:white; }
+.robot-fleet-info { flex:1; min-width:0; }
+.robot-fleet-name { font-size:14px; font-weight:700; }
+.robot-fleet-serial { font-size:10px; color:var(--grey); font-weight:500; margin-bottom:4px; }
+.robot-fleet-actions { display:flex; gap:6px; flex-shrink:0; }
+.fleet-act-btn { width:32px; height:32px; border-radius:10px; border:none; background:rgba(125,181,50,0.1); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.fleet-act-btn svg { width:16px; height:16px; fill:var(--green); }
+.fleet-act-btn.danger-btn { background:rgba(229,57,53,0.08); }
+.fleet-act-btn.danger-btn svg { fill:var(--red); }
+.fleet-act-btn.blue-btn { background:rgba(26,115,232,0.1); }
+.fleet-act-btn.blue-btn svg { fill:var(--blue); }
+.fleet-stat-row { display:flex; gap:10px; margin-top:6px; }
+.fleet-stat { font-size:10px; font-weight:600; color:var(--grey); }
+.fleet-stat strong { color:var(--dark); }
+.fleet-broadcast { background:linear-gradient(135deg,#8dc83a 0%,var(--dark-green) 100%); border-radius:var(--radius); padding:16px; margin:0 18px 16px; display:flex; align-items:center; gap:14px; cursor:pointer; }
+.fleet-broadcast svg { width:24px; height:24px; fill:white; flex-shrink:0; }
+.fleet-broadcast-text h4 { font-size:14px; font-weight:700; color:white; }
+.fleet-broadcast-text p { font-size:11px; color:rgba(255,255,255,0.8); font-weight:500; }
+
+/* ============================================================
+   ÉCRAN RÉGLAGES
+   ============================================================ */
+.settings-section { padding:16px 18px; }
+.settings-section h3 { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--grey); margin-bottom:12px; }
+.settings-card { background:white; border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); margin-bottom:20px; }
+.settings-row { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--grey-light); }
+.settings-row:last-child { border-bottom:none; }
+.settings-row-icon { width:36px; height:36px; border-radius:10px; background:rgba(125,181,50,0.1); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.settings-row-icon svg { width:18px; height:18px; fill:var(--green); }
+.settings-row-icon.red-icon { background:rgba(229,57,53,0.1); }
+.settings-row-icon.red-icon svg { fill:var(--red); }
+.settings-row-icon.blue-icon { background:rgba(26,115,232,0.1); }
+.settings-row-icon.blue-icon svg { fill:var(--blue); }
+.settings-row-icon.orange-icon { background:rgba(255,140,0,0.1); }
+.settings-row-icon.orange-icon svg { fill:var(--orange); }
+.settings-row-label { flex:1; }
+.settings-row-label .s-title { font-size:13px; font-weight:700; }
+.settings-row-label .s-sub { font-size:11px; color:var(--grey); font-weight:500; }
+.toggle-switch { width:44px; height:26px; border-radius:13px; background:var(--green); position:relative; cursor:pointer; border:none; transition:background 0.2s; flex-shrink:0; }
+.toggle-switch::after { content:''; position:absolute; width:20px; height:20px; background:white; border-radius:50%; top:3px; right:3px; transition:right 0.2s; }
+.toggle-switch.off { background:var(--grey-light); }
+.toggle-switch.off::after { right:auto; left:3px; }
+.settings-input-row { padding:12px 16px; border-bottom:1px solid var(--grey-light); }
+.settings-input-row:last-child { border-bottom:none; }
+.settings-input-row label { font-size:10px; font-weight:700; color:var(--grey); text-transform:uppercase; letter-spacing:0.5px; display:block; margin-bottom:6px; }
+.settings-input-row input { width:100%; padding:10px 12px; border:2px solid var(--grey-light); border-radius:10px; font-size:12px; font-weight:600; font-family:'Montserrat',sans-serif; color:var(--dark); background:white; outline:none; transition:border-color 0.2s; }
+.settings-input-row input:focus { border-color:var(--green); }
+.settings-save-btn { width:calc(100% - 36px); margin:0 18px 20px; padding:14px; background:var(--green); color:white; border:none; border-radius:14px; font-size:14px; font-weight:700; font-family:'Montserrat',sans-serif; cursor:pointer; transition:all 0.2s; }
+.settings-save-btn:active { transform:scale(0.98); background:var(--dark-green); }
+.version-note { text-align:center; font-size:10px; color:var(--grey); font-weight:500; padding-bottom:20px; }
+
+/* ============================================================
+   PANNEAU NOTIFICATIONS
+   ============================================================ */
+#notif-panel { position:absolute; top:0; right:0; bottom:0; width:100%; background:var(--cream); z-index:500; transform:translateX(100%); transition:transform 0.3s ease; display:flex; flex-direction:column; }
+#notif-panel.open { transform:translateX(0); }
+.notif-header { background:linear-gradient(135deg,#8dc83a,var(--dark-green)); padding:48px 18px 16px; color:white; display:flex; align-items:center; gap:12px; flex-shrink:0; }
+.notif-header h3 { font-size:18px; font-weight:800; flex:1; }
+.notif-close-btn { width:36px; height:36px; background:rgba(255,255,255,0.2); border-radius:12px; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+.notif-close-btn svg { width:18px; height:18px; fill:white; }
+.notif-list { flex:1; overflow-y:auto; padding:16px 18px; }
+.notif-item { background:white; border-radius:var(--radius); padding:14px 16px; margin-bottom:10px; display:flex; gap:12px; align-items:flex-start; box-shadow:var(--shadow); }
+.notif-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.notif-icon.green-notif { background:rgba(125,181,50,0.1); }
+.notif-icon.green-notif svg { fill:var(--green); }
+.notif-icon.red-notif { background:rgba(229,57,53,0.1); }
+.notif-icon.red-notif svg { fill:var(--red); }
+.notif-icon.orange-notif { background:rgba(255,140,0,0.1); }
+.notif-icon.orange-notif svg { fill:var(--orange); }
+.notif-icon svg { width:18px; height:18px; }
+.notif-body { flex:1; }
+.notif-body .n-title { font-size:13px; font-weight:700; }
+.notif-body .n-msg { font-size:11px; color:var(--grey); font-weight:500; margin-top:2px; line-height:1.4; }
+.notif-body .n-time { font-size:10px; color:var(--grey); font-weight:500; margin-top:4px; }
+.notif-clear-btn { width:calc(100%-36px); margin:0 18px 20px; padding:12px; background:white; border:2px solid var(--grey-light); border-radius:12px; font-size:13px; font-weight:700; font-family:'Montserrat',sans-serif; cursor:pointer; color:var(--grey); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============================================================
+       ÉCRAN LOGIN
+       ============================================================ -->
+  <div id="login-screen" class="screen active">
+    <div class="login-logo">
+      <div class="big-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+      </div>
+      <h1>Novogarden</h1>
+      <p>Robot Manager</p>
+    </div>
+    <div class="login-card">
+      <h2>Connexion</h2>
+      <p>Connectez-vous avec votre compte Lymow pour piloter votre robot depuis cette interface.</p>
+      <button class="btn-google" onclick="loginWithGoogle()">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+        Se connecter avec Google
+      </button>
+
+      <!-- Séparateur -->
+      <div style="display:flex;align-items:center;gap:10px;margin:4px 0;">
+        <div style="flex:1;height:1px;background:var(--grey-light);"></div>
+        <span style="font-size:10px;font-weight:600;color:var(--grey);">OU</span>
+        <div style="flex:1;height:1px;background:var(--grey-light);"></div>
+      </div>
+
+      <!-- Coller URL callback -->
+      <div style="margin-bottom:4px;">
+        <div style="font-size:11px;font-weight:700;color:var(--grey);margin-bottom:6px;">
+          Après connexion Google, coller l'URL de retour :
+        </div>
+        <input type="text" id="callback-url-input"
+          placeholder="myapp://callback/?code=..."
+          style="width:100%;padding:10px 12px;border:2px solid var(--grey-light);border-radius:12px;font-size:12px;font-weight:600;font-family:'Montserrat',sans-serif;color:var(--dark);outline:none;margin-bottom:8px;"
+          oninput="this.style.borderColor=this.value?'var(--green)':'var(--grey-light)'">
+        <button onclick="loginWithCallbackUrl()" style="width:100%;padding:12px;background:var(--dark);color:white;border:none;border-radius:12px;font-size:13px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
+          Valider le code
+        </button>
+      </div>
+
+      <div class="login-note">
+        Après "Se connecter avec Google" → l'app Lymow s'ouvre.<br>
+        Ouvre <strong>PCAPdroid</strong>, filtre "lymow", copie l'URL <code>myapp://callback/?code=…</code> et colle-la ci-dessus.
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       TOPBAR (app principale)
+       ============================================================ -->
+  <div id="main-topbar" class="topbar" style="display:none;">
+    <div class="logo-row">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+      </div>
+      <div>
+        <div class="logo-name">Novogarden</div>
+        <div class="logo-sub">Robot Manager</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn" onclick="openNotifPanel()">
+        <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+        <span class="badge" id="notif-badge" style="display:none">0</span>
+      </button>
+      <button class="icon-btn" onclick="logout()">
+        <svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- MQTT status bar -->
+  <div id="mqtt-bar" class="mqtt-bar" style="display:none;">
+    <div class="mqtt-dot" id="mqtt-dot"></div>
+    <span id="mqtt-status-txt">Déconnecté</span>
+  </div>
+
+  <!-- ============================================================
+       ÉCRAN DASHBOARD
+       ============================================================ -->
+  <div id="dash-screen" class="screen" style="display:none;">
+    <div class="content" id="dash-content">
+
+      <!-- Alerte configuration manquante -->
+      <div class="setup-card" id="setup-warn" style="display:none;">
+        <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+        <div class="sc-text">
+          <strong>Configuration incomplète</strong><br>
+          Le <code>CLIENT_ID</code> n'est pas encore configuré. La connexion au robot sera inactive jusqu'à sa saisie dans le fichier.
+        </div>
+      </div>
+
+      <div class="dash-header">
+        <div style="font-size:13px; font-weight:500; opacity:0.8; margin-bottom:6px;" id="dash-greeting">Bonjour</div>
+        <div style="font-size:20px; font-weight:800;" id="dash-robot-name">Mon robot</div>
+        <div class="robot-card" style="margin-top:14px;">
+          <div class="robot-avatar">
+            <svg viewBox="0 0 24 24"><path d="M17 11c.34 0 .67.03 1 .08V6.27L10.5 3 3 6.27v4.91c0 4.54 3.2 8.79 7.5 9.82.55-.13 1.08-.32 1.6-.55C11.41 19.47 11 18.28 11 17c0-3.31 2.69-6 6-6zm-6.5 1L3.5 8.26V6.9l7-3.11 7 3.11v1.36l-7 3.74zM17 13c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm1.5 5.5h-3v-1h3v1zm0-2h-3v-1h.75v-1.5h-.75v-1h1.5V15h.75v.5h.75v1H18V17h.5v1.5z"/></svg>
+          </div>
+          <div class="robot-info">
+            <div style="font-size:11px; opacity:0.75; font-weight:500;">Robot connecté</div>
+            <h2 id="robot-serial-display">—</h2>
+            <div class="status-pill status-offline" id="robot-status-pill">
+              <div class="dot"></div>
+              <span id="robot-status-txt">Hors ligne</span>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:22px; font-weight:800;" id="battery-val">—</div>
+            <div style="font-size:10px; opacity:0.7; font-weight:500;">batterie</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dash-body">
+        <div class="section-title">Aujourd'hui</div>
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-val" id="stat-surface">0</div>
+            <div class="stat-lbl">m² tondus</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" id="stat-duration">0h</div>
+            <div class="stat-lbl">en tonte</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" id="stat-errors">0</div>
+            <div class="stat-lbl">erreurs</div>
+          </div>
+        </div>
+
+        <div class="section-title">Actions rapides</div>
+        <div class="quick-actions">
+          <button class="action-btn primary" onclick="sendCommand('START')">
+            <div class="a-icon">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+            <div class="a-label">Démarrer</div>
+            <div class="a-sub">Lancer la tonte</div>
+          </button>
+          <button class="action-btn" onclick="sendCommand('DOCK')">
+            <div class="a-icon">
+              <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+            </div>
+            <div class="a-label">Base</div>
+            <div class="a-sub">Retour station</div>
+          </button>
+          <button class="action-btn" onclick="sendCommand('PAUSE')">
+            <div class="a-icon">
+              <svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </div>
+            <div class="a-label">Pause</div>
+            <div class="a-sub">Suspendre</div>
+          </button>
+          <button class="action-btn danger" onclick="sendCommand('STOP')">
+            <div class="a-icon">
+              <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+            </div>
+            <div class="a-label">Arrêt</div>
+            <div class="a-sub">Arrêt d'urgence</div>
+          </button>
+        </div>
+
+        <div class="section-title">Activité récente</div>
+        <div id="activity-feed">
+          <div class="empty-state" style="padding:20px 0;">
+            <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8z"/></svg>
+            <p>Aucune activité récente</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       ÉCRAN CONTRÔLES
+       ============================================================ -->
+  <div id="ctrl-screen" class="screen" style="display:none;">
+    <div class="content">
+      <div class="ctrl-section">
+        <h3>Commandes</h3>
+        <div class="ctrl-main-btns">
+          <button class="ctrl-btn go" onclick="sendCommand('START')">
+            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <div class="c-lbl">Start</div>
+          </button>
+          <button class="ctrl-btn stop" onclick="sendCommand('STOP')">
+            <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+            <div class="c-lbl">Stop</div>
+          </button>
+          <button class="ctrl-btn home-btn" onclick="sendCommand('DOCK')">
+            <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+            <div class="c-lbl">Base</div>
+          </button>
+          <button class="ctrl-btn pause-btn" onclick="sendCommand('PAUSE')">
+            <svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            <div class="c-lbl">Pause</div>
+          </button>
+          <button class="ctrl-btn" onclick="sendCommand('EDGE')">
+            <svg viewBox="0 0 24 24" style="fill:var(--blue)"><path d="M21 3H3v18h18V3zm-2 16H5V5h14v14zM7 7h10v2H7zm0 4h7v2H7z"/></svg>
+            <div class="c-lbl" style="color:var(--blue)">Bords</div>
+          </button>
+          <button class="ctrl-btn" onclick="sendCommand('SPOT')">
+            <svg viewBox="0 0 24 24" style="fill:var(--orange)"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm0-12c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4z"/></svg>
+            <div class="c-lbl" style="color:var(--orange)">Spot</div>
+          </button>
+        </div>
+
+        <h3>Zone de tonte</h3>
+        <div class="zone-chips" id="zone-chips">
+          <!-- Rempli dynamiquement -->
+          <div class="zone-chip active" data-zone="all" onclick="selectZone(this,'all')">Tout</div>
+        </div>
+
+        <h3>Pilotage manuel</h3>
+        <div class="joystick-container">
+          <div class="joystick-grid">
+            <div class="j-btn empty"></div>
+            <button class="j-btn" onmousedown="driveStart('F')" onmouseup="driveStop()" ontouchstart="driveStart('F')" ontouchend="driveStop()">
+              <svg viewBox="0 0 24 24"><path d="M7 14l5-5 5 5z"/></svg>
+            </button>
+            <div class="j-btn empty"></div>
+            <button class="j-btn" onmousedown="driveStart('L')" onmouseup="driveStop()" ontouchstart="driveStart('L')" ontouchend="driveStop()">
+              <svg viewBox="0 0 24 24"><path d="M15 7l-5 5 5 5z"/></svg>
+            </button>
+            <button class="j-btn center" onclick="sendCommand('STOP')">
+              <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+            </button>
+            <button class="j-btn" onmousedown="driveStart('R')" onmouseup="driveStop()" ontouchstart="driveStart('R')" ontouchend="driveStop()">
+              <svg viewBox="0 0 24 24"><path d="M10 17l5-5-5-5v10z"/></svg>
+            </button>
+            <div class="j-btn empty"></div>
+            <button class="j-btn" onmousedown="driveStart('B')" onmouseup="driveStop()" ontouchstart="driveStart('B')" ontouchend="driveStop()">
+              <svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+            </button>
+            <div class="j-btn empty"></div>
+          </div>
+          <div class="speed-row">
+            <label>Vitesse</label>
+            <input type="range" class="speed-slider" id="speed-slider" min="1" max="5" value="3" oninput="document.getElementById('speed-display').textContent=this.value">
+            <div class="speed-val" id="speed-display">3</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       ÉCRAN TERRAINS
+       ============================================================ -->
+  <div id="terrain-screen" class="screen" style="display:none;">
+    <div class="content">
+      <div class="terrain-list" id="terrain-list">
+        <!-- Rempli dynamiquement -->
+      </div>
+      <div style="padding:0 18px 16px;">
+        <button class="add-terrain-btn" onclick="openAddTerrain()">
+          <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          Ajouter un terrain
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       ÉCRAN PLANNING
+       ============================================================ -->
+  <div id="planning-screen" class="screen" style="display:none;">
+    <div class="content">
+      <div class="planning-pad">
+        <div class="week-nav">
+          <button onclick="changeWeek(-1)"><svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg></button>
+          <h3 id="week-label">Cette semaine</h3>
+          <button onclick="changeWeek(1)"><svg viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg></button>
+        </div>
+        <div class="week-days" id="week-days"></div>
+
+        <div class="section-title">Tontes programmées</div>
+        <div class="sched-list" id="sched-list">
+          <!-- Rempli dynamiquement -->
+        </div>
+        <button class="add-sched-btn" onclick="openAddSched()">
+          <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          Ajouter une tonte programmée
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       ÉCRAN CARTE
+       ============================================================ -->
+  <div id="map-screen" class="screen" style="display:none;">
+    <!-- Sélecteur de terrain -->
+    <div style="padding:10px 14px 0; background:white; border-bottom:1px solid var(--grey-light); flex-shrink:0;">
+      <div class="map-terrain-select" id="map-terrain-select">
+        <div class="map-terrain-chip active" data-tid="" onclick="selectMapTerrain(this,'')">Général</div>
+      </div>
+    </div>
+    <div id="map-container" style="flex:1; position:relative; min-height:0;">
+      <div id="leaflet-map"></div>
+      <!-- Barre RTK -->
+      <div class="rtk-badge" id="rtk-badge" onclick="openRtkCalib()">
+        <div class="rtk-dot" id="rtk-dot"></div>
+        <span id="rtk-txt">RTK —</span>
+      </div>
+      <!-- Hint dessin -->
+      <div class="map-hint" id="map-hint">Touchez la carte pour placer les points</div>
+      <!-- Barre outils -->
+      <div class="map-toolbar">
+        <button class="map-tool-btn" id="tool-none" title="Curseur" onclick="setMapTool('none')">
+          <svg viewBox="0 0 24 24"><path d="M4 0l16 12-7 1-4 8z"/></svg>
+        </button>
+        <button class="map-tool-btn" id="tool-perimeter" title="Périmètre" onclick="setMapTool('perimeter')">
+          <svg viewBox="0 0 24 24" style="fill:var(--green)"><path d="M3 17v4h4v-2h10v2h4v-4h-2V7h2V3h-4v2H7V3H3v4h2v10H3zm4-10h10v10H7V7z"/></svg>
+        </button>
+        <button class="map-tool-btn blue-tool" id="tool-obstacle" title="Obstacle" onclick="setMapTool('obstacle')">
+          <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+        </button>
+        <button class="map-tool-btn orange-tool" id="tool-corridor" title="Corridor" onclick="setMapTool('corridor')">
+          <svg viewBox="0 0 24 24"><path d="M1.5 4v2h21V4zm0 7h21V9h-21v2zm0 7h21v-2h-21v2z"/></svg>
+        </button>
+        <button class="map-tool-btn" id="tool-rows" title="Lignes de tonte" onclick="setMapTool('rows')" style="background:#f0f9e8;">
+          <svg viewBox="0 0 24 24" style="fill:var(--dark-green)"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>
+        </button>
+        <button class="map-tool-btn danger-tool" title="Effacer sélection" onclick="clearLastShape()">
+          <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm2.46-7.12l1.41-1.41L12 12.59l2.12-2.12 1.41 1.41L13.41 14l2.12 2.12-1.41 1.41L12 15.41l-2.12 2.12-1.41-1.41L10.59 14l-2.13-2.12zM15.5 4l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+        </button>
+        <button class="map-tool-btn" title="Centrer sur robot" onclick="centerOnRobot()">
+          <svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06z"/></svg>
+        </button>
+        <button class="map-tool-btn" title="Sauvegarder carte" onclick="saveMapData()" style="background:#e8f5e9;">
+          <svg viewBox="0 0 24 24" style="fill:var(--green)"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
+        </button>
+      </div>
+      <!-- Barre bas -->
+      <div class="map-bottom-bar" id="map-bottom-bar">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <h4 id="map-tool-label">Outil: Curseur</h4>
+          <button onclick="finishShape()" id="finish-shape-btn" style="display:none; background:var(--green); color:white; border:none; border-radius:10px; padding:6px 14px; font-size:12px; font-weight:700; font-family:'Montserrat',sans-serif; cursor:pointer;">✓ Terminer</button>
+        </div>
+        <div class="map-rows-bar" id="map-rows-bar" style="display:none;">
+          <label>Largeur rangées</label>
+          <input type="range" min="20" max="200" value="60" id="row-width-slider" oninput="updateRowWidth(this.value)">
+          <span id="row-width-val">60cm</span>
+        </div>
+        <div class="map-legend">
+          <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--green)"></div>Périmètre</div>
+          <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--red)"></div>Obstacle</div>
+          <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--blue)"></div>Corridor</div>
+          <div class="map-legend-item"><div class="map-legend-dot" style="background:var(--dark-green); opacity:0.6"></div>Rangées</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       ÉCRAN FLOTTE
+       ============================================================ -->
+  <div id="fleet-screen" class="screen" style="display:none;">
+    <div class="content">
+      <!-- Diffusion globale -->
+      <div class="fleet-broadcast" onclick="broadcastCommand()">
+        <svg viewBox="0 0 24 24"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3c-1.65-1.66-4.34-1.66-6 0zm-4-4l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
+        <div class="fleet-broadcast-text">
+          <h4>Diffusion globale</h4>
+          <p>Envoyer une commande à tous les robots</p>
+        </div>
+      </div>
+      <div class="fleet-list" id="fleet-list">
+        <!-- rempli dynamiquement -->
+      </div>
+      <div style="padding:0 18px 16px;">
+        <button class="add-terrain-btn" onclick="openAddRobot()">
+          <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          Ajouter un robot
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       ÉCRAN RÉGLAGES
+       ============================================================ -->
+  <div id="settings-screen" class="screen" style="display:none;">
+    <div class="content">
+      <div class="settings-section">
+        <h3>Connexion AWS</h3>
+        <div class="settings-card">
+          <div class="settings-input-row">
+            <label>Client ID (Cognito App)</label>
+            <input type="text" id="cfg-client-id" placeholder="ex: 4abc123xyz..." value="">
+          </div>
+          <div class="settings-input-row">
+            <label>Identity Pool ID</label>
+            <input type="text" id="cfg-identity-pool" placeholder="eu-west-1:xxxxxxxx-..." value="">
+          </div>
+          <div class="settings-input-row">
+            <label>IoT Endpoint</label>
+            <input type="text" id="cfg-iot-endpoint" placeholder="xxxxxx-ats.iot.eu-west-1.amazonaws.com" value="">
+          </div>
+          <div class="settings-input-row">
+            <label>Numéro de série robot principal</label>
+            <input type="text" id="cfg-serial" placeholder="ex: LW-XXXXXX" value="">
+          </div>
+        </div>
+
+        <h3>Alertes</h3>
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-icon red-icon"><svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-1 6h2v6h-2V7zm0 8h2v2h-2v-2z"/></svg></div>
+            <div class="settings-row-label"><div class="s-title">Antivol</div><div class="s-sub">Alerte si robot déplacé hors zone</div></div>
+            <button class="toggle-switch" id="tog-antivol" onclick="toggleSetting('antivol',this)"></button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon orange-icon"><svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg></div>
+            <div class="settings-row-label"><div class="s-title">Batterie faible</div><div class="s-sub">Alerte sous 20%</div></div>
+            <button class="toggle-switch" id="tog-battery-alert" onclick="toggleSetting('battery_alert',this)"></button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon blue-icon"><svg viewBox="0 0 24 24"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z"/></svg></div>
+            <div class="settings-row-label"><div class="s-title">Pause météo</div><div class="s-sub">Arrêt automatique si pluie détectée</div></div>
+            <button class="toggle-switch" id="tog-weather" onclick="toggleSetting('weather_pause',this)"></button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon orange-icon"><svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg></div>
+            <div class="settings-row-label"><div class="s-title">Alertes erreurs</div><div class="s-sub">Notification en cas de panne</div></div>
+            <button class="toggle-switch" id="tog-errors" onclick="toggleSetting('error_alerts',this)"></button>
+          </div>
+        </div>
+
+        <h3>Tonte automatique</h3>
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-icon"><svg viewBox="0 0 24 24"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/></svg></div>
+            <div class="settings-row-label"><div class="s-title">Planning actif</div><div class="s-sub">Déclencher les tontes programmées</div></div>
+            <button class="toggle-switch" id="tog-schedule" onclick="toggleSetting('schedule_active',this)"></button>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon"><svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></div>
+            <div class="settings-row-label"><div class="s-title">Recalage RTK auto</div><div class="s-sub">Décaler la carte à chaque déplacement de base</div></div>
+            <button class="toggle-switch off" id="tog-rtk-auto" onclick="toggleSetting('rtk_auto',this)"></button>
+          </div>
+        </div>
+
+        <h3>Mise à jour (OTA)</h3>
+        <div class="settings-card">
+          <div class="settings-row" onclick="checkOTA()" style="cursor:pointer;">
+            <div class="settings-row-icon blue-icon"><svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg></div>
+            <div class="settings-row-label"><div class="s-title">Vérifier les mises à jour</div><div class="s-sub" id="ota-status">Dernière vérification: jamais</div></div>
+            <svg viewBox="0 0 24 24" style="width:16px;height:16px;fill:var(--grey);flex-shrink:0;"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-icon blue-icon"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg></div>
+            <div class="settings-row-label"><div class="s-title">Version firmware</div><div class="s-sub" id="fw-version">—</div></div>
+          </div>
+        </div>
+
+        <button class="settings-save-btn" onclick="saveConfig()">Enregistrer la configuration</button>
+        <div class="version-note">Novogarden Robot Manager v2.0 • romain.marlier51@gmail.com</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       PANNEAU NOTIFICATIONS (slide-in)
+       ============================================================ -->
+  <div id="notif-panel">
+    <div class="notif-header">
+      <button class="notif-close-btn" onclick="closeNotifPanel()"><svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></button>
+      <h3>Notifications</h3>
+      <span id="notif-count" style="font-size:11px;font-weight:600;opacity:0.8;"></span>
+    </div>
+    <div class="notif-list" id="notif-list">
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+        <p>Aucune notification</p>
+      </div>
+    </div>
+    <button class="notif-clear-btn" onclick="clearNotifs()">Tout effacer</button>
+  </div>
+
+  <!-- ============================================================
+       BOTTOM NAV
+       ============================================================ -->
+  <div class="bottom-nav" id="bottom-nav" style="display:none;">
+    <button class="nav-item active" id="nav-dash" onclick="showScreen('dash')">
+      <svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+      <span class="nav-label">Tableau</span>
+    </button>
+    <button class="nav-item" id="nav-map" onclick="showScreen('map')">
+      <svg viewBox="0 0 24 24"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
+      <span class="nav-label">Carte</span>
+    </button>
+    <button class="nav-item" id="nav-ctrl" onclick="showScreen('ctrl')">
+      <svg viewBox="0 0 24 24"><path d="M15 7.5V2H9v5.5l3 3 3-3zM7.5 9H2v6h5.5l3-3-3-3zM9 16.5V22h6v-5.5l-3-3-3 3zM16.5 9l-3 3 3 3H22V9h-5.5z"/></svg>
+      <span class="nav-label">Contrôles</span>
+    </button>
+    <button class="nav-item" id="nav-fleet" onclick="showScreen('fleet')">
+      <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+      <span class="nav-label">Flotte</span>
+    </button>
+    <button class="nav-item" id="nav-settings" onclick="showScreen('settings')">
+      <svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></svg>
+      <span class="nav-label">Réglages</span>
+    </button>
+  </div>
+
+</div><!-- #app -->
+
+<!-- ============================================================
+     MODALES
+     ============================================================ -->
+
+<!-- Modale: Ajouter terrain -->
+<div class="modal-overlay" id="modal-terrain">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>Nouveau terrain</h3>
+    <p>Ajoutez un terrain à votre liste. La carte et les bornes sont synchronisées depuis le robot.</p>
+    <div class="form-field">
+      <label>Nom du terrain</label>
+      <input type="text" id="terrain-name-input" placeholder="Ex: Parcelle Nord">
+    </div>
+    <div class="form-field">
+      <label>Surface estimée (m²)</label>
+      <input type="number" id="terrain-area-input" placeholder="Ex: 2500">
+    </div>
+    <div class="form-field">
+      <label>Couleur</label>
+      <select id="terrain-color-input">
+        <option value="#7DB532">Vert</option>
+        <option value="#1a73e8">Bleu</option>
+        <option value="#FF8C00">Orange</option>
+        <option value="#e53935">Rouge</option>
+        <option value="#9c27b0">Violet</option>
+      </select>
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn secondary" onclick="closeModal('modal-terrain')">Annuler</button>
+      <button class="modal-btn primary" onclick="saveTerrain()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modale: Ajouter tonte programmée -->
+<div class="modal-overlay" id="modal-sched">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>Programmer une tonte</h3>
+    <p>Définissez le planning de tonte automatique pour ce terrain.</p>
+    <div class="form-field">
+      <label>Terrain</label>
+      <select id="sched-terrain-select">
+        <option value="">-- Choisir un terrain --</option>
+      </select>
+    </div>
+    <div class="form-field">
+      <label>Heure de départ</label>
+      <input type="time" id="sched-time-input" value="07:00">
+    </div>
+    <div class="form-field">
+      <label>Jours</label>
+      <div class="days-picker">
+        <button class="day-pick" data-day="1" onclick="toggleDay(this)">L</button>
+        <button class="day-pick" data-day="2" onclick="toggleDay(this)">M</button>
+        <button class="day-pick" data-day="3" onclick="toggleDay(this)">Me</button>
+        <button class="day-pick" data-day="4" onclick="toggleDay(this)">J</button>
+        <button class="day-pick" data-day="5" onclick="toggleDay(this)">V</button>
+        <button class="day-pick" data-day="6" onclick="toggleDay(this)">S</button>
+        <button class="day-pick" data-day="0" onclick="toggleDay(this)">D</button>
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn secondary" onclick="closeModal('modal-sched')">Annuler</button>
+      <button class="modal-btn primary" onclick="saveSched()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modale: Ajouter robot flotte -->
+<div class="modal-overlay" id="modal-robot">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>Ajouter un robot</h3>
+    <p>Entrez les informations du robot à ajouter à votre flotte.</p>
+    <div class="form-field">
+      <label>Nom du robot</label>
+      <input type="text" id="robot-name-input" placeholder="Ex: Robot Parcelle Nord">
+    </div>
+    <div class="form-field">
+      <label>Numéro de série</label>
+      <input type="text" id="robot-serial-input" placeholder="Ex: LW-XXXXXX">
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn secondary" onclick="closeModal('modal-robot')">Annuler</button>
+      <button class="modal-btn primary" onclick="saveRobot()">Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modale: Calibration RTK -->
+<div class="modal-overlay" id="modal-rtk">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>Recalage RTK</h3>
+    <p>Vous avez déplacé la base RTK ? Entrez le décalage en mètres pour recaler toutes les cartes de ce terrain.</p>
+    <div class="form-field">
+      <label>Décalage Est/Ouest (m)</label>
+      <input type="number" id="rtk-offset-ew" placeholder="Ex: +3.5" step="0.1" value="0">
+    </div>
+    <div class="form-field">
+      <label>Décalage Nord/Sud (m)</label>
+      <input type="number" id="rtk-offset-ns" placeholder="Ex: -2.0" step="0.1" value="0">
+    </div>
+    <div class="form-field">
+      <label>Ou — nouvelle position GPS base (optionnel)</label>
+      <input type="text" id="rtk-gps-pos" placeholder="lat,lng ex: 49.123456,3.654321">
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn secondary" onclick="closeModal('modal-rtk')">Annuler</button>
+      <button class="modal-btn primary" onclick="applyRtkCalib()">Appliquer recalage</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modale: Diffusion flotte -->
+<div class="modal-overlay" id="modal-broadcast">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>Commande globale flotte</h3>
+    <p>Envoie cette commande à tous les robots actifs de la flotte simultanément.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px;">
+      <button class="modal-btn primary" onclick="broadcastAll('START');closeModal('modal-broadcast')">Démarrer tous</button>
+      <button class="modal-btn" style="background:var(--red);color:white;" onclick="broadcastAll('STOP');closeModal('modal-broadcast')">Arrêt urgence</button>
+      <button class="modal-btn" style="background:var(--blue);color:white;" onclick="broadcastAll('DOCK');closeModal('modal-broadcast')">Tous à la base</button>
+      <button class="modal-btn" style="background:var(--orange);color:white;" onclick="broadcastAll('PAUSE');closeModal('modal-broadcast')">Pause tous</button>
+    </div>
+    <div class="modal-btns">
+      <button class="modal-btn secondary" onclick="closeModal('modal-broadcast')">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast notification -->
+<div class="toast" id="toast"></div>
+
+<!-- ============================================================
+     JAVASCRIPT
+     ============================================================ -->
+<script>
+/* ============================================================
+   ÉTAT GLOBAL
+   ============================================================ */
+const STATE = {
+  authenticated: false,
+  tokens: null,         // { id_token, access_token, refresh_token }
+  awsCredentials: null, // { accessKeyId, secretAccessKey, sessionToken }
+  mqttClient: null,
+  mqttConnected: false,
+  robotStatus: 'offline', // offline | idle | mowing | docked | error | paused
+  battery: null,
+  terrains: JSON.parse(localStorage.getItem('ng_terrains') || '[]'),
+  schedules: JSON.parse(localStorage.getItem('ng_schedules') || '[]'),
+  activity: JSON.parse(localStorage.getItem('ng_activity') || '[]'),
+  weekOffset: 0,
+  dailyStats: { surface: 0, duration: 0, errors: 0 },
+};
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+const ALL_SCREENS = ['dash','map','ctrl','terrain','planning','fleet','settings'];
+function showScreen(name) {
+  ALL_SCREENS.forEach(s => {
+    const el = document.getElementById(s+'-screen');
+    if (el) { el.classList.remove('active'); el.style.display = 'none'; }
+    document.getElementById('nav-'+s)?.classList.remove('active');
+  });
+  const el = document.getElementById(name+'-screen');
+  if (el) { el.classList.add('active'); el.style.display = 'flex'; }
+  document.getElementById('nav-'+name)?.classList.add('active');
+  if (name === 'terrain') renderTerrains();
+  if (name === 'planning') renderPlanning();
+  if (name === 'fleet') renderFleet();
+  if (name === 'map') initMap();
+  if (name === 'settings') loadSettingsUI();
+}
+
+/* ============================================================
+   AUTHENTIFICATION COGNITO (OAuth PKCE)
+   ============================================================ */
+function generateCodeVerifier() {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  return btoa(String.fromCharCode(...arr)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+async function generateCodeChallenge(verifier) {
+  const data = new TextEncoder().encode(verifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+async function loginWithCallbackUrl() {
+  const raw = document.getElementById('callback-url-input').value.trim();
+  if (!raw) { showToast('Colle l\'URL de callback', 'red'); return; }
+  // Accepte myapp://callback/?code=XXX ou juste le code brut
+  let code = raw;
+  try {
+    // Remplace le scheme custom pour pouvoir parser avec URL()
+    const parsable = raw.replace('myapp://', 'https://app/');
+    const u = new URL(parsable);
+    code = u.searchParams.get('code') || raw;
+  } catch(e) {}
+  if (!code || code.length < 10) { showToast('Code invalide', 'red'); return; }
+
+  showToast('Échange du token…');
+  const tokens = await exchangeCode(code);
+  if (!tokens || tokens.error) {
+    showToast('Échec : ' + (tokens?.error_description || tokens?.error || 'token invalide'), 'red');
+    return;
+  }
+  STATE.tokens = tokens;
+  localStorage.setItem('ng_tokens', JSON.stringify(tokens));
+  STATE.authenticated = true;
+  showAppShell();
+  STATE.awsCredentials = await getAwsCredentials();
+  if (STATE.awsCredentials) await connectMqtt();
+  else updateMqttStatus('error', 'Identity Pool non configuré');
+}
+
+async function loginWithGoogle() {
+  if (CONFIG.CLIENT_ID === 'VOTRE_CLIENT_ID') {
+    showToast('CLIENT_ID non configuré — voir le fichier', 'red');
+    return;
+  }
+  const verifier = generateCodeVerifier();
+  const challenge = await generateCodeChallenge(verifier);
+  sessionStorage.setItem('pkce_verifier', verifier);
+
+  const params = new URLSearchParams({
+    client_id:             CONFIG.CLIENT_ID,
+    response_type:         'code',
+    scope:                 'openid email profile',
+    redirect_uri:          CONFIG.REDIRECT_URI,
+    code_challenge:        challenge,
+    code_challenge_method: 'S256',
+    identity_provider:     'Google',
+  });
+  window.location.href = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
+}
+
+async function exchangeCode(code) {
+  const verifier = sessionStorage.getItem('pkce_verifier');
+  if (!verifier) return null;
+  const res = await fetch(`${CONFIG.COGNITO_DOMAIN}/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type:    'authorization_code',
+      client_id:     CONFIG.CLIENT_ID,
+      code,
+      redirect_uri:  CONFIG.REDIRECT_URI,
+      code_verifier: verifier,
+    }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function refreshTokens() {
+  const rt = STATE.tokens?.refresh_token;
+  if (!rt) return false;
+  const res = await fetch(`${CONFIG.COGNITO_DOMAIN}/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type:    'refresh_token',
+      client_id:     CONFIG.CLIENT_ID,
+      refresh_token: rt,
+    }),
+  });
+  if (!res.ok) return false;
+  const data = await res.json();
+  STATE.tokens = { ...STATE.tokens, ...data };
+  localStorage.setItem('ng_tokens', JSON.stringify(STATE.tokens));
+  return true;
+}
+
+function logout() {
+  if (!confirm('Se déconnecter ?')) return;
+  localStorage.removeItem('ng_tokens');
+  STATE.tokens = null;
+  STATE.authenticated = false;
+  if (STATE.mqttClient) STATE.mqttClient.end();
+  showLoginScreen();
+}
+
+/* ============================================================
+   AWS CREDENTIALS (Cognito Identity Pool)
+   ============================================================ */
+async function getAwsCredentials() {
+  if (CONFIG.IDENTITY_POOL_ID.includes('VOTRE_')) return null;
+  try {
+    // 1. GetId
+    const getIdRes = await fetch(`https://cognito-identity.${CONFIG.REGION}.amazonaws.com/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityService.GetId',
+      },
+      body: JSON.stringify({
+        IdentityPoolId: CONFIG.IDENTITY_POOL_ID,
+        Logins: { [`cognito-idp.${CONFIG.REGION}.amazonaws.com/${CONFIG.USER_POOL_ID}`]: STATE.tokens.id_token },
+      }),
+    });
+    const { IdentityId } = await getIdRes.json();
+    // 2. GetCredentialsForIdentity
+    const credRes = await fetch(`https://cognito-identity.${CONFIG.REGION}.amazonaws.com/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.1',
+        'X-Amz-Target': 'AWSCognitoIdentityService.GetCredentialsForIdentity',
+      },
+      body: JSON.stringify({
+        IdentityId,
+        Logins: { [`cognito-idp.${CONFIG.REGION}.amazonaws.com/${CONFIG.USER_POOL_ID}`]: STATE.tokens.id_token },
+      }),
+    });
+    const { Credentials } = await credRes.json();
+    return {
+      accessKeyId:     Credentials.AccessKeyId,
+      secretAccessKey: Credentials.SecretKey,
+      sessionToken:    Credentials.SessionToken,
+    };
+  } catch(e) {
+    console.error('Credentials error:', e);
+    return null;
+  }
+}
+
+/* ============================================================
+   MQTT — AWS IoT Core via WebSocket + SigV4
+   ============================================================ */
+function signV4WS(endpoint, credentials) {
+  const now = new Date();
+  const date   = now.toISOString().slice(0,10).replace(/-/g,'');
+  const time   = now.toISOString().slice(11,19).replace(/:/g,'');
+  const datetime = date + 'T' + time + 'Z';
+  const service = 'iotdevicegateway';
+  const region  = CONFIG.REGION;
+  const { accessKeyId, secretAccessKey, sessionToken } = credentials;
+
+  async function hmac(key, str) {
+    const k = typeof key === 'string' ? new TextEncoder().encode(key) : key;
+    const ck = await crypto.subtle.importKey('raw', k, {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
+    return new Uint8Array(await crypto.subtle.sign('HMAC', ck, new TextEncoder().encode(str)));
+  }
+  async function hex(buf) {
+    return Array.from(buf).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+  async function sha256hex(str) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return hex(new Uint8Array(buf));
+  }
+
+  return (async () => {
+    const credScope = `${date}/${region}/${service}/aws4_request`;
+    const qs = new URLSearchParams({
+      'X-Amz-Algorithm':    'AWS4-HMAC-SHA256',
+      'X-Amz-Credential':   `${accessKeyId}/${credScope}`,
+      'X-Amz-Date':         datetime,
+      'X-Amz-SignedHeaders':'host',
+    });
+    if (sessionToken) qs.set('X-Amz-Security-Token', sessionToken);
+
+    const canonical = [
+      'GET',
+      '/mqtt',
+      qs.toString(),
+      `host:${endpoint}\n`,
+      'host',
+      await sha256hex(''),
+    ].join('\n');
+
+    const toSign = ['AWS4-HMAC-SHA256', datetime, credScope, await sha256hex(canonical)].join('\n');
+    const sigKey = await hmac(
+      await hmac(await hmac(await hmac('AWS4'+secretAccessKey, date), region), service),
+      'aws4_request'
+    );
+    const signature = await hex(await hmac(sigKey, toSign));
+    qs.set('X-Amz-Signature', signature);
+    return `wss://${endpoint}/mqtt?${qs}`;
+  })();
+}
+
+async function connectMqtt() {
+  if (CONFIG.IOT_ENDPOINT.includes('VOTRE_')) {
+    updateMqttStatus('error', 'Endpoint non configuré');
+    return;
+  }
+  updateMqttStatus('connecting', 'Connexion...');
+  try {
+    const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
+    const client = mqtt.connect(url, {
+      clientId: 'novogarden-' + Math.random().toString(16).slice(2,10),
+      protocolId: 'MQTT', protocolVersion: 4,
+      clean: true, reconnectPeriod: 5000,
+    });
+    STATE.mqttClient = client;
+
+    client.on('connect', () => {
+      updateMqttStatus('connected', 'Robot connecté');
+      STATE.mqttConnected = true;
+      // S'abonner aux topics du robot
+      if (CONFIG.ROBOT_SERIAL) {
+        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/status`);
+        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/telemetry`);
+        client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/update/accepted`);
+        client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get/accepted`);
+        // Demander l'état courant
+        client.publish(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get`, '{}');
+      }
+    });
+
+    client.on('message', (topic, payload) => {
+      handleMqttMessage(topic, payload.toString());
+    });
+
+    client.on('error', (err) => {
+      console.error('MQTT error:', err);
+      updateMqttStatus('error', 'Erreur connexion');
+    });
+
+    client.on('close', () => {
+      STATE.mqttConnected = false;
+      updateMqttStatus('', 'Déconnecté');
+      updateRobotStatus('offline');
+    });
+  } catch(e) {
+    console.error('MQTT connect error:', e);
+    updateMqttStatus('error', 'Connexion impossible');
+  }
+}
+
+function handleMqttMessage(topic, payload) {
+  try {
+    const data = JSON.parse(payload);
+    // AWS IoT Shadow
+    if (topic.includes('shadow')) {
+      const state = data.state?.reported || data.state?.desired || {};
+      if (state.status)  updateRobotStatus(state.status);
+      if (state.battery != null) updateBattery(state.battery);
+      if (state.serial)  { CONFIG.ROBOT_SERIAL = state.serial; localStorage.setItem('ng_serial', state.serial); }
+    }
+    // Telemetry directe
+    if (topic.includes('telemetry') || topic.includes('status')) {
+      if (data.status)   updateRobotStatus(data.status);
+      if (data.battery != null) updateBattery(data.battery);
+      if (data.mowing_surface) STATE.dailyStats.surface += data.mowing_surface;
+      updateDashStats();
+    }
+    addActivity(topic.split('/').pop(), payload);
+  } catch(e) {}
+}
+
+/* ============================================================
+   COMMANDES ROBOT
+   ============================================================ */
+function sendCommand(cmd, params = {}) {
+  if (!STATE.mqttConnected) {
+    showToast('Robot non connecté', 'red');
+    return;
+  }
+  const serial = CONFIG.ROBOT_SERIAL;
+  if (!serial) { showToast('Numéro de série inconnu', 'red'); return; }
+
+  const payload = JSON.stringify({ command: cmd, ...params, ts: Date.now() });
+  // Essayer plusieurs formats de topic (à affiner selon le vrai protocole)
+  STATE.mqttClient.publish(`lymow/device/${serial}/command`, payload);
+  STATE.mqttClient.publish(`$aws/things/${serial}/shadow/update`, JSON.stringify({
+    state: { desired: { command: cmd, ...params } }
+  }));
+
+  const labels = { START:'Démarrage', STOP:'Arrêt', DOCK:'Retour base', PAUSE:'Pause', EDGE:'Tonte bords', SPOT:'Tonte spot' };
+  showToast(labels[cmd] || cmd, 'green');
+  addActivity(`Commande: ${labels[cmd] || cmd}`, cmd, false);
+}
+
+let driveInterval = null;
+function driveStart(dir) {
+  driveInterval = setInterval(() => sendCommand('DRIVE', { direction: dir, speed: parseInt(document.getElementById('speed-slider').value) }), 200);
+}
+function driveStop() {
+  clearInterval(driveInterval);
+  sendCommand('DRIVE', { direction: 'S', speed: 0 });
+}
+
+function selectZone(el, zone) {
+  document.querySelectorAll('.zone-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  if (zone !== 'all') sendCommand('SET_ZONE', { zone });
+}
+
+/* ============================================================
+   UI — MISES À JOUR
+   ============================================================ */
+function updateMqttStatus(state, label) {
+  const dot = document.getElementById('mqtt-dot');
+  const txt = document.getElementById('mqtt-status-txt');
+  dot.className = 'mqtt-dot' + (state ? ' ' + state : '');
+  txt.textContent = label;
+}
+
+const STATUS_CONFIG = {
+  mowing:  { cls:'status-mowing',  txt:'En tonte' },
+  docked:  { cls:'status-dock',    txt:'En station' },
+  paused:  { cls:'status-idle',    txt:'En pause' },
+  error:   { cls:'status-error',   txt:'Erreur' },
+  idle:    { cls:'status-idle',    txt:'En attente' },
+  offline: { cls:'status-offline', txt:'Hors ligne' },
+};
+function updateRobotStatus(status) {
+  STATE.robotStatus = status;
+  const pill = document.getElementById('robot-status-pill');
+  const txt  = document.getElementById('robot-status-txt');
+  const cfg  = STATUS_CONFIG[status] || STATUS_CONFIG.offline;
+  pill.className = 'status-pill ' + cfg.cls;
+  txt.textContent = cfg.txt;
+}
+function updateBattery(pct) {
+  STATE.battery = pct;
+  document.getElementById('battery-val').textContent = Math.round(pct) + '%';
+  const el = document.getElementById('stat-errors'); // repurpose for battery color
+  if (pct < 20) document.getElementById('battery-val').style.color = 'var(--red)';
+  else if (pct < 40) document.getElementById('battery-val').style.color = 'var(--orange)';
+  else document.getElementById('battery-val').style.color = 'white';
+}
+function updateDashStats() {
+  document.getElementById('stat-surface').textContent = STATE.dailyStats.surface;
+  const h = Math.floor(STATE.dailyStats.duration / 60);
+  const m = STATE.dailyStats.duration % 60;
+  document.getElementById('stat-duration').textContent = h > 0 ? `${h}h${m.toString().padStart(2,'0')}` : `${m}min`;
+  document.getElementById('stat-errors').textContent = STATE.dailyStats.errors;
+}
+
+function addActivity(label, detail = '', isIncoming = true) {
+  const now = new Date();
+  const time = now.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
+  STATE.activity.unshift({ label, detail, time, type: isIncoming ? 'in' : 'out' });
+  if (STATE.activity.length > 20) STATE.activity.pop();
+  localStorage.setItem('ng_activity', JSON.stringify(STATE.activity));
+  renderActivity();
+}
+
+function renderActivity() {
+  const feed = document.getElementById('activity-feed');
+  if (!STATE.activity.length) {
+    feed.innerHTML = '<div class="empty-state" style="padding:20px 0;"><svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8z"/></svg><p>Aucune activité récente</p></div>';
+    return;
+  }
+  feed.innerHTML = STATE.activity.slice(0,8).map(a => `
+    <div class="activity-item">
+      <div class="act-dot ${a.type==='out'?'orange':''}"></div>
+      <div>
+        <div class="act-text">${a.label}</div>
+        <div class="act-time">${a.time}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* ============================================================
+   TERRAINS
+   ============================================================ */
+function renderTerrains() {
+  const list = document.getElementById('terrain-list');
+  if (!STATE.terrains.length) {
+    list.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg><h4>Aucun terrain</h4><p>Ajoutez vos terrains pour les gérer et les planifier.</p></div>';
+    return;
+  }
+  list.innerHTML = STATE.terrains.map((t,i) => `
+    <div class="terrain-card" id="tc-${i}">
+      <div class="terrain-header" onclick="toggleTerrain(${i})">
+        <div class="terrain-color" style="background:${t.color}"></div>
+        <div class="terrain-name">${t.name}</div>
+        <div class="terrain-area">${t.area ? t.area + ' m²' : ''}</div>
+        <svg class="terrain-arrow" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+      </div>
+      <div class="terrain-body">
+        <div class="terrain-meta">
+          <div class="t-meta-item"><div class="lbl">Surface</div><div class="val">${t.area || '—'} m²</div></div>
+          <div class="t-meta-item"><div class="lbl">Zones</div><div class="val">${t.zones || 1}</div></div>
+          <div class="t-meta-item"><div class="lbl">Dernière tonte</div><div class="val">${t.lastMow || '—'}</div></div>
+          <div class="t-meta-item"><div class="lbl">Prochain passage</div><div class="val">${getNextMow(t.name)}</div></div>
+        </div>
+        <div class="terrain-actions">
+          <button class="t-btn primary" onclick="startMowTerrain('${t.name}')">Tondre maintenant</button>
+          <button class="t-btn outline" onclick="editTerrain(${i})">Modifier</button>
+          <button class="t-btn outline" style="flex:0;padding:10px 12px;color:var(--red);border-color:var(--red);" onclick="deleteTerrain(${i})">✕</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+  // Mettre à jour les zones chips dans contrôle
+  updateZoneChips();
+}
+
+function toggleTerrain(i) {
+  document.getElementById('tc-'+i)?.classList.toggle('expanded');
+}
+
+function openAddTerrain() {
+  document.getElementById('terrain-name-input').value = '';
+  document.getElementById('terrain-area-input').value = '';
+  document.getElementById('modal-terrain').classList.add('open');
+}
+function saveTerrain() {
+  const name  = document.getElementById('terrain-name-input').value.trim();
+  const area  = document.getElementById('terrain-area-input').value;
+  const color = document.getElementById('terrain-color-input').value;
+  if (!name) { showToast('Nom requis'); return; }
+  STATE.terrains.push({ name, area: parseInt(area)||null, color, zones: 1 });
+  localStorage.setItem('ng_terrains', JSON.stringify(STATE.terrains));
+  closeModal('modal-terrain');
+  renderTerrains();
+  showToast('Terrain ajouté', 'green');
+}
+function deleteTerrain(i) {
+  if (!confirm('Supprimer ce terrain ?')) return;
+  STATE.terrains.splice(i, 1);
+  localStorage.setItem('ng_terrains', JSON.stringify(STATE.terrains));
+  renderTerrains();
+}
+function editTerrain(i) { showToast('Édition à venir'); }
+
+function startMowTerrain(name) {
+  sendCommand('START', { zone: name });
+}
+
+function getNextMow(terrainName) {
+  const now = new Date();
+  const today = now.getDay();
+  const sched = STATE.schedules.filter(s => s.terrain === terrainName && s.active && s.days?.length);
+  if (!sched.length) return '—';
+  // Trouver le prochain jour
+  for (let delta = 0; delta < 7; delta++) {
+    const d = (today + delta) % 7;
+    const match = sched.find(s => s.days.includes(d));
+    if (match) {
+      if (delta === 0) return `Aujourd'hui ${match.time}`;
+      if (delta === 1) return `Demain ${match.time}`;
+      const days = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+      return `${days[d]} ${match.time}`;
+    }
+  }
+  return '—';
+}
+
+function updateZoneChips() {
+  const chips = document.getElementById('zone-chips');
+  const extras = STATE.terrains.map(t =>
+    `<div class="zone-chip" data-zone="${t.name}" onclick="selectZone(this,'${t.name}')">${t.name}</div>`
+  ).join('');
+  chips.innerHTML = `<div class="zone-chip active" data-zone="all" onclick="selectZone(this,'all')">Tout</div>` + extras;
+}
+
+/* ============================================================
+   PLANNING
+   ============================================================ */
+function renderPlanning() {
+  renderWeekDays();
+  renderSchedules();
+  updateSchedTerrainSelect();
+}
+
+function renderWeekDays() {
+  const container = document.getElementById('week-days');
+  const labels    = ['D','L','M','Me','J','V','S'];
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay() + STATE.weekOffset * 7);
+
+  document.getElementById('week-label').textContent =
+    STATE.weekOffset === 0 ? 'Cette semaine' :
+    STATE.weekOffset === 1 ? 'Semaine prochaine' :
+    STATE.weekOffset === -1 ? 'Semaine dernière' :
+    `Semaine ${startOfWeek.toLocaleDateString('fr-FR', { month:'short', day:'numeric' })}`;
+
+  container.innerHTML = Array.from({length:7}, (_,i) => {
+    const d = new Date(startOfWeek);
+    d.setDate(startOfWeek.getDate() + i);
+    const isToday = d.toDateString() === now.toDateString();
+    const dayNum  = d.getDay();
+    const hasEvent = STATE.schedules.some(s => s.active && s.days?.includes(dayNum));
+    return `
+      <div class="day-cell">
+        <div class="day-lbl">${labels[i]}</div>
+        <div class="day-num ${isToday?'today':hasEvent?'has-event':''}">${d.getDate()}</div>
+      </div>`;
+  }).join('');
+}
+
+function changeWeek(delta) {
+  STATE.weekOffset += delta;
+  renderWeekDays();
+}
+
+function renderSchedules() {
+  const list = document.getElementById('sched-list');
+  const active = STATE.schedules;
+  if (!active.length) {
+    list.innerHTML = '<div class="empty-state" style="padding:20px 0;"><svg viewBox="0 0 24 24"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/></svg><p>Aucune tonte programmée</p></div>';
+    return;
+  }
+  const dayNames = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  list.innerHTML = active.map((s,i) => `
+    <div class="sched-item">
+      <div class="sched-left">
+        <div class="sched-time">${s.time}</div>
+        <div class="sched-terrain">${s.terrain}</div>
+        <div class="sched-zone">${s.days?.map(d => dayNames[d]).join(' · ') || ''}</div>
+      </div>
+      <button class="sched-toggle ${s.active?'':'off'}" onclick="toggleSched(${i})"></button>
+      <button class="sched-del" onclick="deleteSched(${i})">
+        <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+      </button>
+    </div>
+  `).join('');
+}
+
+function openAddSched() {
+  document.getElementById('modal-sched').classList.add('open');
+  updateSchedTerrainSelect();
+}
+function updateSchedTerrainSelect() {
+  const sel = document.getElementById('sched-terrain-select');
+  sel.innerHTML = '<option value="">-- Choisir un terrain --</option>' +
+    STATE.terrains.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+}
+function toggleDay(el) { el.classList.toggle('sel'); }
+function saveSched() {
+  const terrain = document.getElementById('sched-terrain-select').value;
+  const time    = document.getElementById('sched-time-input').value;
+  const days    = [...document.querySelectorAll('.day-pick.sel')].map(el => parseInt(el.dataset.day));
+  if (!terrain) { showToast('Terrain requis'); return; }
+  if (!days.length) { showToast('Choisir au moins un jour'); return; }
+  STATE.schedules.push({ terrain, time, days, active: true });
+  localStorage.setItem('ng_schedules', JSON.stringify(STATE.schedules));
+  closeModal('modal-sched');
+  renderPlanning();
+  scheduleAutoMow();
+  showToast('Planning enregistré', 'green');
+}
+function toggleSched(i) {
+  STATE.schedules[i].active = !STATE.schedules[i].active;
+  localStorage.setItem('ng_schedules', JSON.stringify(STATE.schedules));
+  renderSchedules();
+  scheduleAutoMow();
+}
+function deleteSched(i) {
+  STATE.schedules.splice(i, 1);
+  localStorage.setItem('ng_schedules', JSON.stringify(STATE.schedules));
+  renderPlanning();
+}
+
+/* ============================================================
+   AUTOMATISATION — déclenchement programmé
+   (fonctionne tant que l'app est ouverte dans le navigateur)
+   ============================================================ */
+let _schedTimer = null;
+function scheduleAutoMow() {
+  clearInterval(_schedTimer);
+  _schedTimer = setInterval(() => {
+    if (STATE.settings && !STATE.settings.schedule_active) return;
+    const now   = new Date();
+    const day   = now.getDay();
+    const hhmm  = now.toTimeString().slice(0,5);
+    STATE.schedules.forEach(s => {
+      if (!s.active) return;
+      if (!s.days.includes(day)) return;
+      if (s.time !== hhmm) return;
+      if (s._lastTriggered === hhmm + '-' + now.toDateString()) return;
+      s._lastTriggered = hhmm + '-' + now.toDateString();
+      sendCommand('START', { zone: s.terrain });
+      showToast(`Tonte auto: ${s.terrain}`, 'green');
+      addActivity(`Tonte auto démarrée: ${s.terrain}`, s.terrain);
+    });
+  }, 30000); // vérifie toutes les 30s
+}
+
+/* ============================================================
+   MODALES
+   ============================================================ */
+function closeModal(id) {
+  document.getElementById(id)?.classList.remove('open');
+}
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+let _toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (type ? ' '+type : '');
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+/* ============================================================
+   INIT — vérif OAuth callback + session sauvegardée
+   ============================================================ */
+function showLoginScreen() {
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-screen').classList.add('active');
+  document.getElementById('main-topbar').style.display = 'none';
+  document.getElementById('mqtt-bar').style.display = 'none';
+  document.getElementById('bottom-nav').style.display = 'none';
+  ALL_SCREENS.forEach(s => {
+    const el = document.getElementById(s+'-screen');
+    if (el) { el.style.display = 'none'; el.classList.remove('active'); }
+  });
+  document.getElementById('notif-panel')?.classList.remove('open');
+}
+
+async function init() {
+  const url    = new URL(window.location.href);
+  const code   = url.searchParams.get('code');
+  const error  = url.searchParams.get('error');
+
+  if (error) {
+    showToast('Erreur de connexion: ' + error, 'red');
+    showLoginScreen();
+    return;
+  }
+
+  if (code) {
+    // Nettoyer l'URL
+    window.history.replaceState({}, '', window.location.pathname);
+    const tokens = await exchangeCode(code);
+    if (!tokens) {
+      showToast('Échec échange de token', 'red');
+      showLoginScreen();
+      return;
+    }
+    STATE.tokens = tokens;
+    localStorage.setItem('ng_tokens', JSON.stringify(tokens));
+    STATE.authenticated = true;
+    showAppShell();
+    // Obtenir credentials AWS et connecter MQTT
+    STATE.awsCredentials = await getAwsCredentials();
+    if (STATE.awsCredentials) await connectMqtt();
+    else updateMqttStatus('error', 'Identity Pool non configuré');
+    return;
+  }
+
+  // Session sauvegardée ?
+  const saved = localStorage.getItem('ng_tokens');
+  if (saved) {
+    STATE.tokens = JSON.parse(saved);
+    // Vérifier expiration (id_token JWT)
+    try {
+      const payload = JSON.parse(atob(STATE.tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      if (Date.now() / 1000 > payload.exp) {
+        const ok = await refreshTokens();
+        if (!ok) { showLoginScreen(); return; }
+      }
+    } catch(e) { showLoginScreen(); return; }
+    STATE.authenticated = true;
+    showAppShell();
+    STATE.awsCredentials = await getAwsCredentials();
+    if (STATE.awsCredentials) await connectMqtt();
+    else updateMqttStatus('error', 'Credentials non disponibles');
+    return;
+  }
+
+  showLoginScreen();
+}
+
+// Lancer
+init();
+
+/* ============================================================
+   ÉTAT ÉTENDU
+   ============================================================ */
+Object.assign(STATE, {
+  fleet:    JSON.parse(localStorage.getItem('ng_fleet')    || '[]'),
+  notifs:   JSON.parse(localStorage.getItem('ng_notifs')   || '[]'),
+  settings: JSON.parse(localStorage.getItem('ng_settings') || JSON.stringify({
+    antivol:true, battery_alert:true, weather_pause:true,
+    error_alerts:true, schedule_active:true, rtk_auto:false
+  })),
+  mapData:  JSON.parse(localStorage.getItem('ng_mapdata')  || '{}'),
+  robotGPS: null,
+  rtkStatus:'none',
+  _lowBattNotifSent: false,
+});
+
+/* ============================================================
+   SHOWAPPSHELL — redéfini avec initialisations supplémentaires
+   ============================================================ */
+function showAppShell() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('login-screen').classList.remove('active');
+  document.getElementById('main-topbar').style.display = 'flex';
+  document.getElementById('mqtt-bar').style.display = 'flex';
+  document.getElementById('bottom-nav').style.display = 'flex';
+  try {
+    const payload = JSON.parse(atob(STATE.tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    const name = payload.given_name || payload.name || payload.email || 'Utilisateur';
+    document.getElementById('dash-greeting').textContent = 'Bonjour, ' + name;
+    document.getElementById('dash-robot-name').textContent = 'Mon Robot Lymow';
+  } catch(e) {}
+  const serial = localStorage.getItem('ng_serial');
+  if (serial) { CONFIG.ROBOT_SERIAL = serial; document.getElementById('robot-serial-display').textContent = serial; }
+  if (CONFIG.CLIENT_ID === 'VOTRE_CLIENT_ID' || CONFIG.IOT_ENDPOINT.includes('VOTRE_')) {
+    document.getElementById('setup-warn').style.display = 'flex';
+  }
+  loadSavedConfig();
+  showScreen('dash');
+  renderActivity();
+  updateDashStats();
+  scheduleAutoMow();
+  renderFleet();
+  startWeatherWatch();
+  renderNotifs();
+  updateMapTerrainChips();
+}
+
+function loadSavedConfig() {
+  const saved = localStorage.getItem('ng_config');
+  if (!saved) return;
+  const c = JSON.parse(saved);
+  if (c.CLIENT_ID)        CONFIG.CLIENT_ID        = c.CLIENT_ID;
+  if (c.IDENTITY_POOL_ID) CONFIG.IDENTITY_POOL_ID = c.IDENTITY_POOL_ID;
+  if (c.IOT_ENDPOINT)     CONFIG.IOT_ENDPOINT     = c.IOT_ENDPOINT;
+  if (c.ROBOT_SERIAL)     { CONFIG.ROBOT_SERIAL   = c.ROBOT_SERIAL; localStorage.setItem('ng_serial', c.ROBOT_SERIAL); }
+  // Masquer l'avertissement si tout est rempli
+  if (CONFIG.CLIENT_ID !== 'VOTRE_CLIENT_ID' && !CONFIG.IOT_ENDPOINT.includes('VOTRE_')) {
+    const w = document.getElementById('setup-warn');
+    if (w) w.style.display = 'none';
+  }
+}
+
+/* ============================================================
+   CARTE — Leaflet
+   ============================================================ */
+let _map = null;
+let _mapTool = 'none';
+let _currentTerrainId = '';
+let _drawPoints = [];
+let _drawLayer = null;
+let _layers = { perimeters:[], obstacles:[], corridors:[], rows:[], robotMarker:null, rtkMarker:null };
+
+function initMap() {
+  if (_map) { setTimeout(()=>_map.invalidateSize(),200); refreshMapLayers(); return; }
+  _map = L.map('leaflet-map', { zoomControl:false, attributionControl:false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:22, attribution:'© OSM'
+  }).addTo(_map);
+  L.control.zoom({ position:'bottomright' }).addTo(_map);
+  L.control.attribution({ position:'bottomleft', prefix:'' }).addTo(_map);
+
+  // Centrage initial : France par défaut ou dernière position
+  const lastPos = localStorage.getItem('ng_map_center');
+  if (lastPos) {
+    const [lat,lng,z] = JSON.parse(lastPos);
+    _map.setView([lat,lng], z);
+  } else {
+    _map.setView([46.5,2.5], 6);
+  }
+
+  _map.on('click', onMapClick);
+  _map.on('moveend', ()=>{
+    const c = _map.getCenter();
+    localStorage.setItem('ng_map_center', JSON.stringify([c.lat, c.lng, _map.getZoom()]));
+  });
+
+  refreshMapLayers();
+  updateMapTerrainChips();
+  setTimeout(()=>_map.invalidateSize(),300);
+}
+
+function setMapTool(tool) {
+  _mapTool = tool;
+  _drawPoints = [];
+  if (_drawLayer) { _map.removeLayer(_drawLayer); _drawLayer = null; }
+
+  document.querySelectorAll('.map-tool-btn[id^="tool-"]').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('tool-'+tool);
+  if (btn) btn.classList.add('active');
+
+  const labels = { none:'Curseur', perimeter:'Tracer périmètre (cliquer les points)', obstacle:'Tracer obstacle/exclusion', corridor:'Tracer corridor d\'accès', rows:'Calculer lignes de tonte' };
+  document.getElementById('map-tool-label').textContent = 'Outil: ' + (labels[tool]||tool);
+  document.getElementById('finish-shape-btn').style.display = (tool !== 'none' && tool !== 'rows') ? 'block' : 'none';
+  document.getElementById('map-rows-bar').style.display = tool === 'rows' ? 'flex' : 'none';
+
+  const hint = document.getElementById('map-hint');
+  if (tool === 'none') { hint.classList.remove('show'); }
+  else if (tool === 'rows') { hint.textContent = 'Cliquer sur un périmètre pour calculer ses lignes'; hint.classList.add('show'); setTimeout(()=>hint.classList.remove('show'),3000); }
+  else { hint.textContent = 'Touchez la carte pour placer les points — ✓ Terminer pour valider'; hint.classList.add('show'); }
+
+  if (tool === 'rows') computeRows();
+}
+
+function onMapClick(e) {
+  if (_mapTool === 'none') return;
+  if (_mapTool === 'rows') return;
+  const {lat,lng} = e.latlng;
+  _drawPoints.push([lat,lng]);
+
+  if (_drawLayer) _map.removeLayer(_drawLayer);
+  const color = _mapTool === 'perimeter' ? '#7DB532' : _mapTool === 'obstacle' ? '#e53935' : '#1a73e8';
+  if (_drawPoints.length === 1) {
+    _drawLayer = L.circleMarker([lat,lng], {radius:5, color, fillColor:color, fillOpacity:1}).addTo(_map);
+  } else {
+    _drawLayer = L.polyline(_drawPoints, {color, weight:3, dashArray:'6,4'}).addTo(_map);
+  }
+}
+
+function finishShape() {
+  if (_drawPoints.length < 3) { showToast('Minimum 3 points', 'red'); return; }
+  const tid = _currentTerrainId;
+  if (!STATE.mapData[tid]) STATE.mapData[tid] = { perimeters:[], obstacles:[], corridors:[], rows:[] };
+  const key = _mapTool === 'perimeter' ? 'perimeters' : _mapTool === 'obstacle' ? 'obstacles' : 'corridors';
+  STATE.mapData[tid][key].push([..._drawPoints]);
+  saveMapData();
+  _drawPoints = [];
+  if (_drawLayer) { _map.removeLayer(_drawLayer); _drawLayer = null; }
+  document.getElementById('finish-shape-btn').style.display = 'none';
+  setMapTool('none');
+  refreshMapLayers();
+  showToast('Zone enregistrée', 'green');
+  const hint = document.getElementById('map-hint'); hint.classList.remove('show');
+}
+
+function clearLastShape() {
+  const tid = _currentTerrainId;
+  const d = STATE.mapData[tid];
+  if (!d) { showToast('Aucune forme à effacer'); return; }
+  // Supprimer la dernière forme dans l'ordre perimeter→obstacle→corridor→rows
+  for (const key of ['rows','corridors','obstacles','perimeters']) {
+    if (d[key] && d[key].length) { d[key].pop(); saveMapData(); refreshMapLayers(); showToast('Dernière forme supprimée'); return; }
+  }
+  showToast('Rien à supprimer');
+}
+
+function refreshMapLayers() {
+  if (!_map) return;
+  // Supprimer toutes les couches existantes
+  [..._layers.perimeters, ..._layers.obstacles, ..._layers.corridors, ..._layers.rows].forEach(l=>{ try{_map.removeLayer(l);}catch(e){} });
+  _layers.perimeters=[]; _layers.obstacles=[]; _layers.corridors=[]; _layers.rows=[];
+
+  const tid = _currentTerrainId;
+  const d = STATE.mapData[tid];
+  if (!d) return;
+
+  (d.perimeters||[]).forEach(pts => {
+    const poly = L.polygon(pts, {color:'#7DB532', fillColor:'#7DB532', fillOpacity:0.15, weight:2}).addTo(_map);
+    _layers.perimeters.push(poly);
+  });
+  (d.obstacles||[]).forEach(pts => {
+    const poly = L.polygon(pts, {color:'#e53935', fillColor:'#e53935', fillOpacity:0.25, weight:2}).addTo(_map);
+    _layers.obstacles.push(poly);
+  });
+  (d.corridors||[]).forEach(pts => {
+    const line = L.polyline(pts, {color:'#1a73e8', weight:3}).addTo(_map);
+    _layers.corridors.push(line);
+  });
+  (d.rows||[]).forEach(row => {
+    const line = L.polyline(row, {color:'#5a8e1e', weight:1.5, opacity:0.7, dashArray:'4,3'}).addTo(_map);
+    _layers.rows.push(line);
+  });
+}
+
+function computeRows() {
+  const tid = _currentTerrainId;
+  const d = STATE.mapData[tid];
+  if (!d || !d.perimeters || !d.perimeters.length) { showToast('Dessiner un périmètre d\'abord', 'red'); return; }
+  const widthCm = parseInt(document.getElementById('row-width-slider').value) || 60;
+  const widthDeg = (widthCm / 100) / 111320; // ~cm → degrés lat
+
+  d.rows = [];
+  d.perimeters.forEach(pts => {
+    const lats = pts.map(p=>p[0]), lngs = pts.map(p=>p[1]);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+    let lat = minLat + widthDeg/2;
+    let dir = 1;
+    while (lat < maxLat) {
+      d.rows.push([[lat, minLng],[lat, maxLng]]);
+      lat += widthDeg;
+      dir *= -1;
+    }
+  });
+  saveMapData();
+  refreshMapLayers();
+  showToast(`${d.rows.length} rangées calculées`, 'green');
+  document.getElementById('map-hint').classList.remove('show');
+  setMapTool('none');
+}
+
+function updateRowWidth(val) {
+  document.getElementById('row-width-val').textContent = val + 'cm';
+}
+
+function centerOnRobot() {
+  if (STATE.robotGPS) {
+    _map.setView([STATE.robotGPS.lat, STATE.robotGPS.lng], 18);
+  } else {
+    showToast('Position GPS robot inconnue', 'red');
+  }
+}
+
+function saveMapData() {
+  localStorage.setItem('ng_mapdata', JSON.stringify(STATE.mapData));
+}
+
+function selectMapTerrain(el, tid) {
+  _currentTerrainId = tid;
+  document.querySelectorAll('.map-terrain-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  _drawPoints = [];
+  if (_drawLayer) { _map.removeLayer(_drawLayer); _drawLayer = null; }
+  setMapTool('none');
+  refreshMapLayers();
+}
+
+function updateMapTerrainChips() {
+  const sel = document.getElementById('map-terrain-select');
+  const extras = STATE.terrains.map(t=>
+    `<div class="map-terrain-chip" data-tid="${t.name}" onclick="selectMapTerrain(this,'${t.name}')">${t.name}</div>`
+  ).join('');
+  sel.innerHTML = `<div class="map-terrain-chip active" data-tid="" onclick="selectMapTerrain(this,'')">Général</div>` + extras;
+}
+
+// Afficher position robot sur la carte
+function updateRobotMarker(lat, lng) {
+  STATE.robotGPS = {lat, lng};
+  if (!_map) return;
+  const icon = L.divIcon({
+    html:`<div style="width:18px;height:18px;background:#7DB532;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(125,181,50,0.8);"></div>`,
+    iconSize:[18,18], iconAnchor:[9,9], className:''
+  });
+  if (_layers.robotMarker) _map.removeLayer(_layers.robotMarker);
+  _layers.robotMarker = L.marker([lat,lng], {icon, zIndexOffset:1000}).bindPopup('Robot').addTo(_map);
+}
+
+/* ============================================================
+   RTK CALIBRATION
+   ============================================================ */
+function openRtkCalib() { document.getElementById('modal-rtk').classList.add('open'); }
+
+function applyRtkCalib() {
+  const ew = parseFloat(document.getElementById('rtk-offset-ew').value)||0;
+  const ns = parseFloat(document.getElementById('rtk-offset-ns').value)||0;
+  if (ew===0 && ns===0) { closeModal('modal-rtk'); return; }
+  const dLat = ns / 111320;
+  const dLng = ew / (111320 * Math.cos((STATE.robotGPS?.lat||46.5) * Math.PI/180));
+  // Décaler toutes les coordonnées de tous les terrains
+  Object.keys(STATE.mapData).forEach(tid => {
+    const d = STATE.mapData[tid];
+    ['perimeters','obstacles','corridors','rows'].forEach(key => {
+      if (!d[key]) return;
+      d[key] = d[key].map(shape => shape.map(pt => [pt[0]+dLat, pt[1]+dLng]));
+    });
+  });
+  saveMapData();
+  refreshMapLayers();
+  closeModal('modal-rtk');
+  showToast(`Recalage appliqué: E/O ${ew}m N/S ${ns}m`, 'green');
+  addActivity(`Recalage RTK: ${ew>0?'+':''}${ew}m / ${ns>0?'+':''}${ns}m`);
+}
+
+function updateRtkStatus(status) {
+  STATE.rtkStatus = status;
+  const dot = document.getElementById('rtk-dot');
+  const txt = document.getElementById('rtk-txt');
+  dot.className = 'rtk-dot ' + (status==='fixed'?'fixed':status==='float'?'float':'');
+  txt.textContent = status==='fixed'?'RTK Fixed':status==='float'?'RTK Float':'RTK —';
+}
+
+/* ============================================================
+   FLOTTE MULTI-ROBOT
+   ============================================================ */
+function renderFleet() {
+  const list = document.getElementById('fleet-list');
+  if (!list) return;
+  if (!STATE.fleet.length) {
+    list.innerHTML = '<div class="empty-state"><svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg><h4>Aucun robot</h4><p>Ajoutez vos robots pour gérer votre flotte.</p></div>';
+    return;
+  }
+  list.innerHTML = STATE.fleet.map((r,i) => {
+    const st = STATE.robotStatus === 'mowing' && r.serial === CONFIG.ROBOT_SERIAL ? 'En tonte' : 'Hors ligne';
+    const stCls = st==='En tonte'?'status-mowing':'status-offline';
+    return `
+    <div class="robot-fleet-card">
+      <div class="robot-fleet-avatar"><svg viewBox="0 0 24 24"><path d="M17 11c.34 0 .67.03 1 .08V6.27L10.5 3 3 6.27v4.91c0 4.54 3.2 8.79 7.5 9.82.55-.13 1.08-.32 1.6-.55C11.41 19.47 11 18.28 11 17c0-3.31 2.69-6 6-6zm-6.5 1L3.5 8.26V6.9l7-3.11 7 3.11v1.36l-7 3.74z"/></svg></div>
+      <div class="robot-fleet-info">
+        <div class="robot-fleet-name">${r.name}</div>
+        <div class="robot-fleet-serial">${r.serial}</div>
+        <div class="status-pill ${stCls}" style="margin-top:4px;"><div class="dot"></div><span>${st}</span></div>
+        <div class="fleet-stat-row">
+          <div class="fleet-stat">Batterie: <strong>${r.battery!=null?r.battery+'%':'—'}</strong></div>
+          <div class="fleet-stat">Terrain: <strong>${r.terrain||'—'}</strong></div>
+        </div>
+      </div>
+      <div class="robot-fleet-actions">
+        <button class="fleet-act-btn" title="Démarrer" onclick="fleetCmd('${r.serial}','START')"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+        <button class="fleet-act-btn blue-btn" title="Base" onclick="fleetCmd('${r.serial}','DOCK')"><svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></button>
+        <button class="fleet-act-btn danger-btn" title="Supprimer" onclick="deleteRobot(${i})"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openAddRobot() {
+  document.getElementById('robot-name-input').value = '';
+  document.getElementById('robot-serial-input').value = '';
+  document.getElementById('modal-robot').classList.add('open');
+}
+function saveRobot() {
+  const name   = document.getElementById('robot-name-input').value.trim();
+  const serial = document.getElementById('robot-serial-input').value.trim().toUpperCase();
+  if (!name || !serial) { showToast('Nom et série requis'); return; }
+  STATE.fleet.push({ name, serial, battery:null, terrain:null });
+  localStorage.setItem('ng_fleet', JSON.stringify(STATE.fleet));
+  closeModal('modal-robot');
+  renderFleet();
+  showToast('Robot ajouté', 'green');
+  addActivity(`Nouveau robot: ${name} (${serial})`);
+}
+function deleteRobot(i) {
+  if (!confirm('Retirer ce robot de la flotte ?')) return;
+  STATE.fleet.splice(i,1);
+  localStorage.setItem('ng_fleet', JSON.stringify(STATE.fleet));
+  renderFleet();
+}
+
+function fleetCmd(serial, cmd) {
+  if (!STATE.mqttConnected) { showToast('Non connecté', 'red'); return; }
+  const payload = JSON.stringify({ command:cmd, ts:Date.now() });
+  STATE.mqttClient.publish(`lymow/device/${serial}/command`, payload);
+  STATE.mqttClient.publish(`$aws/things/${serial}/shadow/update`, JSON.stringify({state:{desired:{command:cmd}}}));
+  showToast(`${cmd} → ${serial}`, 'green');
+}
+
+function broadcastCommand() { document.getElementById('modal-broadcast').classList.add('open'); }
+function broadcastAll(cmd) {
+  const targets = [CONFIG.ROBOT_SERIAL, ...STATE.fleet.map(r=>r.serial)].filter(Boolean);
+  const unique = [...new Set(targets)];
+  unique.forEach(serial => fleetCmd(serial, cmd));
+  showToast(`${cmd} → ${unique.length} robot(s)`, 'green');
+  addActivity(`Diffusion globale: ${cmd} (${unique.length} robots)`);
+}
+
+/* ============================================================
+   RÉGLAGES
+   ============================================================ */
+function loadSettingsUI() {
+  // Config AWS
+  document.getElementById('cfg-client-id').value   = CONFIG.CLIENT_ID !== 'VOTRE_CLIENT_ID' ? CONFIG.CLIENT_ID : '';
+  document.getElementById('cfg-identity-pool').value = CONFIG.IDENTITY_POOL_ID.includes('VOTRE_') ? '' : CONFIG.IDENTITY_POOL_ID;
+  document.getElementById('cfg-iot-endpoint').value = CONFIG.IOT_ENDPOINT.includes('VOTRE_') ? '' : CONFIG.IOT_ENDPOINT;
+  document.getElementById('cfg-serial').value       = CONFIG.ROBOT_SERIAL || '';
+  // Toggles
+  Object.entries(STATE.settings).forEach(([key,val]) => {
+    const id = 'tog-'+key.replace(/_/g,'-');
+    const el = document.getElementById(id);
+    if (el) { el.className = 'toggle-switch' + (val?'':' off'); }
+  });
+  // OTA
+  const lastOta = localStorage.getItem('ng_ota_date');
+  if (lastOta) document.getElementById('ota-status').textContent = 'Vérifié le ' + lastOta;
+  const fwVer = localStorage.getItem('ng_fw_version');
+  if (fwVer) document.getElementById('fw-version').textContent = fwVer;
+}
+
+function toggleSetting(key, btn) {
+  STATE.settings[key] = !STATE.settings[key];
+  btn.className = 'toggle-switch' + (STATE.settings[key]?'':' off');
+  localStorage.setItem('ng_settings', JSON.stringify(STATE.settings));
+  if (key === 'schedule_active') scheduleAutoMow();
+  showToast(STATE.settings[key]?'Activé':'Désactivé');
+}
+
+function saveConfig() {
+  const cid  = document.getElementById('cfg-client-id').value.trim();
+  const ipid = document.getElementById('cfg-identity-pool').value.trim();
+  const iot  = document.getElementById('cfg-iot-endpoint').value.trim();
+  const ser  = document.getElementById('cfg-serial').value.trim().toUpperCase();
+  if (cid)  CONFIG.CLIENT_ID        = cid;
+  if (ipid) CONFIG.IDENTITY_POOL_ID = ipid;
+  if (iot)  CONFIG.IOT_ENDPOINT     = iot;
+  if (ser)  { CONFIG.ROBOT_SERIAL   = ser; localStorage.setItem('ng_serial', ser); document.getElementById('robot-serial-display').textContent = ser; }
+  localStorage.setItem('ng_config', JSON.stringify({ CLIENT_ID:CONFIG.CLIENT_ID, IDENTITY_POOL_ID:CONFIG.IDENTITY_POOL_ID, IOT_ENDPOINT:CONFIG.IOT_ENDPOINT, ROBOT_SERIAL:CONFIG.ROBOT_SERIAL }));
+  const w = document.getElementById('setup-warn');
+  if (w && cid && iot) w.style.display='none';
+  showToast('Configuration enregistrée', 'green');
+  // Reconnexion si nécessaire
+  if (!STATE.mqttConnected && STATE.authenticated && !CONFIG.IOT_ENDPOINT.includes('VOTRE_')) {
+    getAwsCredentials().then(c=>{ if(c){ STATE.awsCredentials=c; connectMqtt(); } });
+  }
+}
+
+/* ============================================================
+   OTA — vérification firmware via IoT Shadow
+   ============================================================ */
+function checkOTA() {
+  document.getElementById('ota-status').textContent = 'Vérification en cours…';
+  if (STATE.mqttConnected && CONFIG.ROBOT_SERIAL) {
+    // Demander l'état du shadow pour lire la version firmware
+    STATE.mqttClient.publish(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get`, '{}');
+    setTimeout(()=>{
+      const date = new Date().toLocaleDateString('fr-FR');
+      localStorage.setItem('ng_ota_date', date);
+      document.getElementById('ota-status').textContent = 'Vérifié le ' + date;
+      showToast('Firmware à jour', 'green');
+    }, 3000);
+  } else {
+    showToast('Robot non connecté', 'red');
+    document.getElementById('ota-status').textContent = 'Connexion requise';
+  }
+}
+
+/* ============================================================
+   MÉTÉO — pause automatique si pluie
+   ============================================================ */
+let _weatherTimer = null;
+async function startWeatherWatch() {
+  if (_weatherTimer) return;
+  await checkWeather();
+  _weatherTimer = setInterval(checkWeather, 30 * 60 * 1000); // toutes les 30min
+}
+
+async function checkWeather() {
+  if (!STATE.settings.weather_pause) return;
+  if (!STATE.robotGPS && !navigator.geolocation) return;
+  try {
+    const pos = STATE.robotGPS || await new Promise((res,rej)=>
+      navigator.geolocation.getCurrentPosition(p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),rej,{timeout:5000})
+    );
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${pos.lat}&longitude=${pos.lng}&current=precipitation,rain,showers&timezone=auto`;
+    const data = await fetch(url).then(r=>r.json());
+    const rain = (data.current?.precipitation||0) + (data.current?.rain||0) + (data.current?.showers||0);
+    if (rain > 0.1) {
+      if (STATE.robotStatus === 'mowing') {
+        sendCommand('DOCK');
+        pushNotif('Pause météo', `Pluie détectée (${rain.toFixed(1)}mm) — robot retourné à la base`, 'orange');
+      }
+    }
+  } catch(e) { /* météo non dispo — silencieux */ }
+}
+
+/* ============================================================
+   ANTIVOL
+   ============================================================ */
+let _lastKnownPos = null;
+let _antivolTimer = null;
+
+function startAntivolWatch() {
+  if (_antivolTimer) return;
+  _antivolTimer = setInterval(()=>{
+    if (!STATE.settings.antivol) return;
+    if (!STATE.robotGPS) return;
+    if (!_lastKnownPos) { _lastKnownPos = {...STATE.robotGPS}; return; }
+    const dist = haversineM(_lastKnownPos.lat,_lastKnownPos.lng, STATE.robotGPS.lat, STATE.robotGPS.lng);
+    if (STATE.robotStatus === 'docked' || STATE.robotStatus === 'offline') {
+      if (dist > 5) { // déplacé de plus de 5m alors qu'il devrait être à la base
+        pushNotif('⚠️ ANTIVOL', `Robot déplacé de ${Math.round(dist)}m depuis la station !`, 'red');
+        _lastKnownPos = {...STATE.robotGPS};
+      }
+    }
+  }, 60000); // vérif chaque minute
+}
+
+function haversineM(lat1,lng1,lat2,lng2) {
+  const R=6371000, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+/* ============================================================
+   NOTIFICATIONS
+   ============================================================ */
+function pushNotif(title, msg, type='green') {
+  const now = new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+  STATE.notifs.unshift({title,msg,type,time:now});
+  if (STATE.notifs.length > 50) STATE.notifs.pop();
+  localStorage.setItem('ng_notifs', JSON.stringify(STATE.notifs));
+  renderNotifs();
+  // Badge
+  const badge = document.getElementById('notif-badge');
+  if (badge) { badge.style.display='flex'; badge.textContent=Math.min(STATE.notifs.length,9); }
+  // Toast aussi
+  showToast(title+': '+msg.slice(0,40), type==='red'?'red':type==='orange'?'':'green');
+}
+
+function renderNotifs() {
+  const list = document.getElementById('notif-list');
+  if (!list) return;
+  if (!STATE.notifs.length) {
+    list.innerHTML='<div class="empty-state"><svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg><p>Aucune notification</p></div>';
+    return;
+  }
+  const iconMap = { green:'<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>', red:'<path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>', orange:'<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>' };
+  list.innerHTML = STATE.notifs.map(n=>`
+    <div class="notif-item">
+      <div class="notif-icon ${n.type}-notif"><svg viewBox="0 0 24 24">${iconMap[n.type]||iconMap.green}</svg></div>
+      <div class="notif-body"><div class="n-title">${n.title}</div><div class="n-msg">${n.msg}</div><div class="n-time">${n.time}</div></div>
+    </div>`).join('');
+  const cnt = document.getElementById('notif-count');
+  if (cnt) cnt.textContent = STATE.notifs.length + ' notification'+(STATE.notifs.length>1?'s':'');
+}
+
+function clearNotifs() {
+  STATE.notifs=[];
+  localStorage.setItem('ng_notifs','[]');
+  renderNotifs();
+  const badge=document.getElementById('notif-badge');
+  if (badge) badge.style.display='none';
+}
+
+function closeNotifPanel() {
+  document.getElementById('notif-panel').classList.remove('open');
+  const badge=document.getElementById('notif-badge');
+  if (badge) badge.style.display='none';
+}
+
+
+/* ============================================================
+   PATCH handleMqttMessage — enrichi
+   ============================================================ */
+const _origHandleMqtt = handleMqttMessage;
+window.handleMqttMessage = function(topic, payload) {
+  _origHandleMqtt(topic, payload);
+  try {
+    const data = JSON.parse(payload);
+    // GPS position
+    if (data.gps || data.position) {
+      const gps = data.gps || data.position;
+      if (gps.lat && gps.lng) updateRobotMarker(gps.lat, gps.lng);
+    }
+    // RTK status
+    if (data.rtk_status) updateRtkStatus(data.rtk_status);
+    // Firmware version
+    if (data.firmware_version || data.fw_version) {
+      const fv = data.firmware_version || data.fw_version;
+      localStorage.setItem('ng_fw_version', fv);
+      const el = document.getElementById('fw-version');
+      if (el) el.textContent = fv;
+    }
+    // Erreurs → notification
+    if (data.error && STATE.settings.error_alerts) {
+      pushNotif('Erreur robot', data.error, 'red');
+      STATE.dailyStats.errors++;
+      updateDashStats();
+    }
+    // Batterie faible → notification
+    if (data.battery != null && data.battery < 20 && STATE.settings.battery_alert) {
+      if (!STATE._lowBattNotifSent) {
+        pushNotif('Batterie faible', `Niveau batterie: ${Math.round(data.battery)}%`, 'orange');
+        STATE._lowBattNotifSent = true;
+      }
+    } else if (data.battery != null && data.battery >= 30) {
+      STATE._lowBattNotifSent = false;
+    }
+    // Tonte terminée → stats
+    if (data.status === 'docked' && STATE.robotStatus === 'mowing') {
+      pushNotif('Tonte terminée', 'Robot retourné à la base', 'green');
+    }
+    // Mettre à jour flotte
+    if (topic.includes('telemetry') || topic.includes('status')) {
+      const serial = topic.split('/')[2];
+      const robot = STATE.fleet.find(r=>r.serial===serial);
+      if (robot) {
+        if (data.battery!=null) robot.battery = Math.round(data.battery);
+        localStorage.setItem('ng_fleet', JSON.stringify(STATE.fleet));
+        renderFleet();
+      }
+    }
+    // Antivol
+    if (data.gps || data.position) startAntivolWatch();
+  } catch(e) {}
+};
+
+function openNotifPanel() {
+  document.getElementById('notif-panel').classList.add('open');
+  renderNotifs();
+}
+</script>
+</body>
+</html>
