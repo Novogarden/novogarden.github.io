@@ -1194,13 +1194,11 @@ async function showGoogleUrl() {
     const params = new URLSearchParams({
       client_id:             CONFIG.CLIENT_ID,
       response_type:         'code',
-      scope:                 'openid aws.cognito.signin.user.admin',
+      scope:                 'openid',
       redirect_uri:          CONFIG.REDIRECT_URI,
       code_challenge:        challenge,
       code_challenge_method: 'S256',
-      identity_provider:     'Google',
     });
-    // /login est l'endpoint exact utilisé par l'app Lymow officielle
     _pendingLoginUrl = `${CONFIG.COGNITO_DOMAIN}/login?${params}`;
     document.getElementById('google-url-text').value = _pendingLoginUrl;
     document.getElementById('google-url-box').style.display = 'block';
