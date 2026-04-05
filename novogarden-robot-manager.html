@@ -1191,13 +1191,17 @@ async function showGoogleUrl() {
     const verifier = generateCodeVerifier();
     const challenge = await generateCodeChallenge(verifier);
     localStorage.setItem('pkce_verifier', verifier);
+    // state aléatoire — requis par Cognito Lymow
+    const state = generateCodeVerifier().slice(0, 32);
     const params = new URLSearchParams({
       client_id:             CONFIG.CLIENT_ID,
       response_type:         'code',
-      scope:                 'openid',
       redirect_uri:          CONFIG.REDIRECT_URI,
+      scope:                 'openid aws.cognito.signin.user.admin',
+      identity_provider:     'Google',
       code_challenge:        challenge,
       code_challenge_method: 'S256',
+      state,
     });
     _pendingLoginUrl = `${CONFIG.COGNITO_DOMAIN}/login?${params}`;
     document.getElementById('google-url-text').value = _pendingLoginUrl;
