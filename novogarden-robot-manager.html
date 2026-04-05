@@ -14,7 +14,7 @@
 <script>
 const CONFIG = {
   // Cognito User Pool
-  COGNITO_DOMAIN:   'https://eu-west-1_6qNPbnrrd.auth.eu-west-1.amazoncognito.com',
+  COGNITO_DOMAIN:   'https://eu-auth.lymow.com',
   CLIENT_ID:        '3h1sqv3hishjiofbv8giskjgb0',
   USER_POOL_ID:     'eu-west-1_6qNPbnrrd',
   IDENTITY_POOL_ID: 'eu-west-1:c905a69c-0153-401a-a879-0c50b892015b',
@@ -1187,17 +1187,26 @@ async function loginWithCallbackUrl() {
 let _pendingLoginUrl = null;
 
 async function showGoogleUrl() {
-  // Sans PKCE — le client Lymow utilise un client secret côté serveur
-  const params = new URLSearchParams({
-    client_id:         CONFIG.CLIENT_ID,
-    response_type:     'code',
-    scope:             'openid aws.cognito.signin.user.admin',
-    redirect_uri:      CONFIG.REDIRECT_URI,
-    identity_provider: 'Google',
-  });
-  _pendingLoginUrl = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
-  document.getElementById('google-url-text').value = _pendingLoginUrl;
-  document.getElementById('google-url-box').style.display = 'block';
+  try {
+    const verifier = generateCodeVerifier();
+    const challenge = await generateCodeChallenge(verifier);
+    localStorage.setItem('pkce_verifier', verifier);
+    const params = new URLSearchParams({
+      client_id:             CONFIG.CLIENT_ID,
+      response_type:         'code',
+      scope:                 'openid aws.cognito.signin.user.admin',
+      redirect_uri:          CONFIG.REDIRECT_URI,
+      code_challenge:        challenge,
+      code_challenge_method: 'S256',
+      identity_provider:     'Google',
+    });
+    // /login est l'endpoint exact utilisé par l'app Lymow officielle
+    _pendingLoginUrl = `${CONFIG.COGNITO_DOMAIN}/login?${params}`;
+    document.getElementById('google-url-text').value = _pendingLoginUrl;
+    document.getElementById('google-url-box').style.display = 'block';
+  } catch(e) {
+    alert('Erreur: ' + e.message);
+  }
 }
 
 function copyGoogleUrl() {
@@ -1220,10 +1229,11 @@ async function exchangeCode(code) {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type:   'authorization_code',
-      client_id:    CONFIG.CLIENT_ID,
+      grant_type:    'authorization_code',
+      client_id:     CONFIG.CLIENT_ID,
       code,
-      redirect_uri: CONFIG.REDIRECT_URI,
+      redirect_uri:  CONFIG.REDIRECT_URI,
+      ...(localStorage.getItem('pkce_verifier') ? { code_verifier: localStorage.getItem('pkce_verifier') } : {}),
     }),
   });
   if (!res.ok) return null;
@@ -1871,15 +1881,21 @@ async function init() {
   // Session sauvegardée ?
   const saved = localStorage.getItem('ng_tokens');
   if (saved) {
+    showToast('Session trouvée — vérification…');
     STATE.tokens = JSON.parse(saved);
-    // Vérifier expiration (id_token JWT)
     try {
       const payload = JSON.parse(atob(STATE.tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-      if (Date.now() / 1000 > payload.exp) {
+      const exp = payload.exp;
+      const now = Date.now() / 1000;
+      if (now > exp) {
+        showToast('Token expiré — refresh…', 'orange');
         const ok = await refreshTokens();
-        if (!ok) { showLoginScreen(); return; }
+        if (!ok) { showToast('Refresh échoué — reconnexion', 'red'); showLoginScreen(); return; }
+        showToast('Token rafraîchi ✅', 'green');
+      } else {
+        showToast('Token valide ✅', 'green');
       }
-    } catch(e) { showLoginScreen(); return; }
+    } catch(e) { showToast('Token illisible — reconnexion', 'red'); showLoginScreen(); return; }
     STATE.authenticated = true;
     showAppShell();
     STATE.awsCredentials = await getAwsCredentials();
@@ -1888,6 +1904,7 @@ async function init() {
     return;
   }
 
+  showToast('Aucune session — login requis', 'orange');
   showLoginScreen();
 }
 
