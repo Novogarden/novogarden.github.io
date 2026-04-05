@@ -1179,7 +1179,8 @@ async function loginWithCallbackUrl() {
 async function loginWithGoogle() {
   const verifier = generateCodeVerifier();
   const challenge = await generateCodeChallenge(verifier);
-  sessionStorage.setItem('pkce_verifier', verifier);
+  // localStorage persiste après redirection (contrairement à sessionStorage)
+  localStorage.setItem('pkce_verifier', verifier);
 
   const params = new URLSearchParams({
     client_id:             CONFIG.CLIENT_ID,
@@ -1192,18 +1193,12 @@ async function loginWithGoogle() {
   });
   const url = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
 
-  // Ouvrir dans un nouvel onglet — notre app reste ouverte
-  const popup = window.open(url, '_blank');
-  if (!popup) {
-    // Bloqueur de popup : rediriger quand même
-    window.location.href = url;
-    return;
-  }
-  showToast('Connectez-vous dans le nouvel onglet, puis collez l\'URL myapp://');
+  // Redirection directe — pas de popup
+  window.location.href = url;
 }
 
 async function exchangeCode(code) {
-  const verifier = sessionStorage.getItem('pkce_verifier');
+  const verifier = localStorage.getItem('pkce_verifier');
   if (!verifier) return null;
   const res = await fetch(`${CONFIG.COGNITO_DOMAIN}/oauth2/token`, {
     method: 'POST',
