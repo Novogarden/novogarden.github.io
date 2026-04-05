@@ -1177,24 +1177,28 @@ async function loginWithCallbackUrl() {
 }
 
 async function loginWithGoogle() {
-  const verifier = generateCodeVerifier();
-  const challenge = await generateCodeChallenge(verifier);
-  // localStorage persiste après redirection (contrairement à sessionStorage)
-  localStorage.setItem('pkce_verifier', verifier);
+  try {
+    showToast('Génération du code PKCE…');
+    const verifier = generateCodeVerifier();
+    const challenge = await generateCodeChallenge(verifier);
+    localStorage.setItem('pkce_verifier', verifier);
 
-  const params = new URLSearchParams({
-    client_id:             CONFIG.CLIENT_ID,
-    response_type:         'code',
-    scope:                 'openid aws.cognito.signin.user.admin',
-    redirect_uri:          CONFIG.REDIRECT_URI,
-    code_challenge:        challenge,
-    code_challenge_method: 'S256',
-    identity_provider:     'Google',
-  });
-  const url = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
-
-  // Redirection directe — pas de popup
-  window.location.href = url;
+    const params = new URLSearchParams({
+      client_id:             CONFIG.CLIENT_ID,
+      response_type:         'code',
+      scope:                 'openid aws.cognito.signin.user.admin',
+      redirect_uri:          CONFIG.REDIRECT_URI,
+      code_challenge:        challenge,
+      code_challenge_method: 'S256',
+      identity_provider:     'Google',
+    });
+    const url = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
+    showToast('Redirection vers Google…');
+    setTimeout(() => { window.location.href = url; }, 500);
+  } catch(e) {
+    showToast('❌ Erreur login: ' + e.message, 'red');
+    console.error(e);
+  }
 }
 
 async function exchangeCode(code) {
