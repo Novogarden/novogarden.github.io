@@ -1187,26 +1187,17 @@ async function loginWithCallbackUrl() {
 let _pendingLoginUrl = null;
 
 async function showGoogleUrl() {
-  try {
-    const verifier = generateCodeVerifier();
-    const challenge = await generateCodeChallenge(verifier);
-    localStorage.setItem('pkce_verifier', verifier);
-    const params = new URLSearchParams({
-      client_id:             CONFIG.CLIENT_ID,
-      response_type:         'code',
-      scope:                 'openid aws.cognito.signin.user.admin',
-      redirect_uri:          CONFIG.REDIRECT_URI,
-      code_challenge:        challenge,
-      code_challenge_method: 'S256',
-      identity_provider:     'Google',
-    });
-    _pendingLoginUrl = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
-    document.getElementById('google-url-text').value = _pendingLoginUrl;
-    document.getElementById('google-url-box').style.display = 'block';
-  } catch(e) {
-    alert('Erreur génération URL: ' + e.message);
-    console.error(e);
-  }
+  // Sans PKCE — le client Lymow utilise un client secret côté serveur
+  const params = new URLSearchParams({
+    client_id:         CONFIG.CLIENT_ID,
+    response_type:     'code',
+    scope:             'openid aws.cognito.signin.user.admin',
+    redirect_uri:      CONFIG.REDIRECT_URI,
+    identity_provider: 'Google',
+  });
+  _pendingLoginUrl = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
+  document.getElementById('google-url-text').value = _pendingLoginUrl;
+  document.getElementById('google-url-box').style.display = 'block';
 }
 
 function copyGoogleUrl() {
@@ -1229,11 +1220,10 @@ async function exchangeCode(code) {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type:    'authorization_code',
-      client_id:     CONFIG.CLIENT_ID,
+      grant_type:   'authorization_code',
+      client_id:    CONFIG.CLIENT_ID,
       code,
-      redirect_uri:  CONFIG.REDIRECT_URI,
-      code_verifier: verifier,
+      redirect_uri: CONFIG.REDIRECT_URI,
     }),
   });
   if (!res.ok) return null;
