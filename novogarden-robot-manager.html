@@ -1252,8 +1252,16 @@ function logout() {
    AWS CREDENTIALS (Cognito Identity Pool)
    ============================================================ */
 async function getAwsCredentials() {
-  if (CONFIG.IDENTITY_POOL_ID.includes('VOTRE_')) return null;
+  if (CONFIG.IDENTITY_POOL_ID.includes('VOTRE_')) {
+    showToast('⚠️ Identity Pool non configuré', 'orange');
+    return null;
+  }
+  if (!STATE.tokens?.id_token) {
+    showToast('⚠️ Pas de id_token — reconnectez-vous', 'orange');
+    return null;
+  }
   try {
+    showToast('🔑 GetId en cours…', 'blue');
     // 1. GetId
     const getIdRes = await fetch(`https://cognito-identity.${CONFIG.REGION}.amazonaws.com/`, {
       method: 'POST',
@@ -1266,7 +1274,23 @@ async function getAwsCredentials() {
         Logins: { [`cognito-idp.${CONFIG.REGION}.amazonaws.com/${CONFIG.USER_POOL_ID}`]: STATE.tokens.id_token },
       }),
     });
-    const { IdentityId } = await getIdRes.json();
+    const getId_raw = await getIdRes.text();
+    console.log('[GetId] status:', getIdRes.status, 'body:', getId_raw);
+    if (!getIdRes.ok) {
+      showToast('❌ GetId HTTP ' + getIdRes.status + ': ' + getId_raw.slice(0,120), 'red');
+      return null;
+    }
+    const { IdentityId, __type: getId_err } = JSON.parse(getId_raw);
+    if (getId_err) {
+      showToast('❌ GetId erreur: ' + getId_err, 'red');
+      return null;
+    }
+    if (!IdentityId) {
+      showToast('❌ GetId: IdentityId absent — ' + getId_raw.slice(0,100), 'red');
+      return null;
+    }
+    showToast('✅ IdentityId: ' + IdentityId.slice(-12), 'green');
+
     // 2. GetCredentialsForIdentity
     const credRes = await fetch(`https://cognito-identity.${CONFIG.REGION}.amazonaws.com/`, {
       method: 'POST',
@@ -1279,7 +1303,22 @@ async function getAwsCredentials() {
         Logins: { [`cognito-idp.${CONFIG.REGION}.amazonaws.com/${CONFIG.USER_POOL_ID}`]: STATE.tokens.id_token },
       }),
     });
-    const { Credentials } = await credRes.json();
+    const cred_raw = await credRes.text();
+    console.log('[GetCreds] status:', credRes.status, 'body:', cred_raw);
+    if (!credRes.ok) {
+      showToast('❌ GetCreds HTTP ' + credRes.status + ': ' + cred_raw.slice(0,120), 'red');
+      return null;
+    }
+    const { Credentials, __type: cred_err } = JSON.parse(cred_raw);
+    if (cred_err) {
+      showToast('❌ GetCreds erreur: ' + cred_err, 'red');
+      return null;
+    }
+    if (!Credentials?.AccessKeyId) {
+      showToast('❌ GetCreds: pas de credentials — ' + cred_raw.slice(0,100), 'red');
+      return null;
+    }
+    showToast('✅ Credentials AWS obtenus', 'green');
     return {
       accessKeyId:     Credentials.AccessKeyId,
       secretAccessKey: Credentials.SecretKey,
@@ -1287,6 +1326,7 @@ async function getAwsCredentials() {
     };
   } catch(e) {
     console.error('Credentials error:', e);
+    showToast('❌ Credentials exception: ' + e.message, 'red');
     return null;
   }
 }
@@ -1381,6 +1421,7 @@ async function connectMqtt() {
 
     client.on('error', (err) => {
       console.error('MQTT error:', err);
+      showToast('❌ MQTT erreur: ' + (err.message || JSON.stringify(err)).slice(0,120), 'red');
       updateMqttStatus('error', 'Erreur connexion');
     });
 
@@ -1389,8 +1430,13 @@ async function connectMqtt() {
       updateMqttStatus('', 'Déconnecté');
       updateRobotStatus('offline');
     });
+
+    client.on('offline', () => {
+      showToast('⚠️ MQTT offline (WebSocket refusé?)', 'orange');
+    });
   } catch(e) {
     console.error('MQTT connect error:', e);
+    showToast('❌ MQTT exception: ' + e.message, 'red');
     updateMqttStatus('error', 'Connexion impossible');
   }
 }
