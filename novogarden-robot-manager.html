@@ -463,6 +463,15 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         </svg>
         Se connecter avec Google
       </button>
+      <!-- Lien généré dynamiquement -->
+      <div id="google-link-box" style="display:none;margin-top:8px;padding:12px;background:#f0f7e6;border-radius:12px;border:2px solid var(--green);text-align:center;">
+        <div style="font-size:11px;font-weight:700;color:var(--grey);margin-bottom:8px;">Clique sur ce bouton pour ouvrir Google :</div>
+        <a id="google-link-btn" href="#" target="_blank"
+           style="display:block;padding:12px;background:var(--green);color:white;border-radius:10px;font-size:13px;font-weight:700;text-decoration:none;">
+          → Ouvrir la page Google
+        </a>
+        <div style="font-size:10px;color:var(--grey);margin-top:8px;">Après connexion, copie l'URL myapp://... et colle-la ci-dessous</div>
+      </div>
 
       <!-- Séparateur -->
       <div style="display:flex;align-items:center;gap:10px;margin:4px 0;">
@@ -1178,7 +1187,6 @@ async function loginWithCallbackUrl() {
 
 async function loginWithGoogle() {
   try {
-    showToast('Génération du code PKCE…');
     const verifier = generateCodeVerifier();
     const challenge = await generateCodeChallenge(verifier);
     localStorage.setItem('pkce_verifier', verifier);
@@ -1193,8 +1201,13 @@ async function loginWithGoogle() {
       identity_provider:     'Google',
     });
     const url = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
-    showToast('Redirection vers Google…');
-    setTimeout(() => { window.location.href = url; }, 500);
+
+    // Afficher le lien cliquable dans la page
+    const box = document.getElementById('google-link-box');
+    const btn = document.getElementById('google-link-btn');
+    btn.href = url;
+    box.style.display = 'block';
+    showToast('Clique sur "Ouvrir la page Google" ↑');
   } catch(e) {
     showToast('❌ Erreur login: ' + e.message, 'red');
     console.error(e);
