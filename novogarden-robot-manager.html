@@ -1496,13 +1496,20 @@ async function connectMqtt() {
     });
 
     client.on('close', () => {
+      if (STATE.mqttClient !== client) return; // ignorer les anciens clients
       STATE.mqttConnected = false;
       updateMqttStatus('', 'Déconnecté');
       updateRobotStatus('offline');
+      // Reconnexion automatique avec nouveaux credentials
+      setTimeout(async () => {
+        if (!STATE.authenticated || STATE.mqttConnected) return;
+        STATE.awsCredentials = await getAwsCredentials();
+        if (STATE.awsCredentials) connectMqtt();
+      }, 3000);
     });
 
     client.on('offline', () => {
-      showToast('⚠️ MQTT offline (WebSocket refusé?)', 'orange');
+      if (STATE.mqttClient !== client) return;
     });
   } catch(e) {
     console.error('MQTT connect error:', e);
