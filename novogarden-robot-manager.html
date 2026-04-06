@@ -1298,43 +1298,84 @@ function logout() {
 /* ============================================================
    AWS CREDENTIALS (Cognito Identity Pool)
    ============================================================ */
+async function sigV4Http(method, url, body, credentials) {
+  const { accessKeyId, secretAccessKey, sessionToken } = credentials;
+  const te = new TextEncoder();
+  async function hmacSHA256(key, data) {
+    const k = key instanceof Uint8Array ? key : te.encode(key);
+    const ck = await crypto.subtle.importKey('raw', k, {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
+    return new Uint8Array(await crypto.subtle.sign('HMAC', ck, te.encode(data)));
+  }
+  function toHex(b) { return Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join(''); }
+  async function sha256(s) { return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', te.encode(s)))); }
+
+  const u = new URL(url);
+  const now = new Date();
+  const date = now.toISOString().slice(0,10).replace(/-/g,'');
+  const datetime = date + 'T' + now.toISOString().slice(11,19).replace(/:/g,'') + 'Z';
+  const region = CONFIG.REGION;
+  const service = 'execute-api';
+  const credScope = `${date}/${region}/${service}/aws4_request`;
+  const bodyStr = body || '';
+  const payloadHash = await sha256(bodyStr);
+
+  const headers = {
+    'host': u.hostname,
+    'x-amz-date': datetime,
+    'x-amz-security-token': sessionToken || '',
+  };
+  const signedHeaderKeys = Object.keys(headers).sort();
+  const canonicalHeaders = signedHeaderKeys.map(k => k+':'+headers[k]).join('\n') + '\n';
+  const signedHeaders = signedHeaderKeys.join(';');
+
+  const canonicalReq = [method, u.pathname, u.search.slice(1), canonicalHeaders, signedHeaders, payloadHash].join('\n');
+  const stringToSign = ['AWS4-HMAC-SHA256', datetime, credScope, await sha256(canonicalReq)].join('\n');
+  const kDate    = await hmacSHA256('AWS4'+secretAccessKey, date);
+  const kRegion  = await hmacSHA256(kDate, region);
+  const kService = await hmacSHA256(kRegion, service);
+  const kSign    = await hmacSHA256(kService, 'aws4_request');
+  const signature = toHex(await hmacSHA256(kSign, stringToSign));
+
+  const authHeader = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  return fetch(url, {
+    method,
+    headers: {
+      'Authorization': authHeader,
+      'X-Amz-Date': datetime,
+      'X-Amz-Security-Token': sessionToken || '',
+      ...(body ? {'Content-Type': 'application/json'} : {}),
+    },
+    body: body || undefined,
+  });
+}
+
 async function probeApiGateway() {
   const base = 'https://eigc6a2ds9.execute-api.eu-west-1.amazonaws.com';
-  const token = STATE.tokens?.id_token || '';
-  const accessToken = STATE.tokens?.access_token || '';
+  const creds = STATE.awsCredentials;
+  if (!creds) { console.log('[API-GW] pas de credentials'); return; }
+
   const paths = [
-    '/prod/iot/credentials',
-    '/prod/mqtt/credentials',
-    '/prod/device/credentials',
+    '/prod/',
     '/prod/iot',
     '/prod/mqtt',
     '/prod/user',
     '/prod/me',
     '/prod/robot',
-    '/prod/',
-    '/v1/iot/credentials',
-    '/v1/mqtt',
-    '/v1/user',
-    '/v1/me',
-    '/v1/',
-    '/iot/credentials',
-    '/mqtt',
-    '/',
+    '/prod/mower',
+    '/prod/mowers',
+    '/prod/device',
+    '/prod/devices',
+    '/prod/robots',
+    '/prod/config',
+    '/prod/iot/config',
+    '/prod/iot/topics',
   ];
-  console.log('[API-GW] probe', base, '— nb paths:', paths.length);
+  console.log('[API-GW] probe SigV4 IAM —', base);
   for (const path of paths) {
     try {
-      const r = await fetch(base + path, {
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'x-access-token': accessToken,
-        },
-      });
+      const r = await sigV4Http('GET', base + path, null, creds);
       const body = await r.text();
-      console.log(`[API-GW] ${path} → ${r.status}: ${body.slice(0, 200)}`);
-      if (r.status !== 403 && r.status !== 404 && r.status !== 401) {
-        console.log('[API-GW] ✅ RÉPONSE INTÉRESSANTE sur', path);
-      }
+      console.log(`[API-GW] ${path} → ${r.status}: ${body.slice(0, 300)}`);
     } catch(e) {
       console.log(`[API-GW] ${path} → ERREUR: ${e.message}`);
     }
