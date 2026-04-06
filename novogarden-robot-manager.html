@@ -1497,16 +1497,10 @@ async function connectMqtt() {
     });
 
     client.on('close', () => {
-      if (STATE.mqttClient !== client) return; // ignorer les anciens clients
+      if (STATE.mqttClient !== client) return;
       STATE.mqttConnected = false;
       updateMqttStatus('', 'Déconnecté');
       updateRobotStatus('offline');
-      // Reconnexion automatique avec nouveaux credentials
-      setTimeout(async () => {
-        if (!STATE.authenticated || STATE.mqttConnected) return;
-        STATE.awsCredentials = await getAwsCredentials();
-        if (STATE.awsCredentials) connectMqtt();
-      }, 3000);
     });
 
     client.on('offline', () => {
