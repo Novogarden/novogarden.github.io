@@ -1455,10 +1455,8 @@ async function connectMqtt() {
   updateMqttStatus('connecting', 'Connexion...');
   try {
     const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
-    // clientId = IdentityId complet (requis par la policy IoT Cognito)
-    const clientId = STATE.awsCredentials.identityId || CONFIG.ROBOT_SERIAL;
     const client = mqtt.connect(url, {
-      clientId: clientId,
+      clientId: 'novogarden-' + Math.random().toString(16).slice(2,10),
       protocolId: 'MQTT', protocolVersion: 4,
       clean: true, reconnectPeriod: 0,
     });
