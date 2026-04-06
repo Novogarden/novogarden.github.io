@@ -1960,9 +1960,6 @@ async function init() {
   showLoginScreen();
 }
 
-// Lancer
-init();
-
 /* ============================================================
    ÉTAT ÉTENDU
    ============================================================ */
@@ -1978,6 +1975,9 @@ Object.assign(STATE, {
   rtkStatus:'none',
   _lowBattNotifSent: false,
 });
+
+// Lancer
+init();
 
 /* ============================================================
    SHOWAPPSHELL — redéfini avec initialisations supplémentaires
