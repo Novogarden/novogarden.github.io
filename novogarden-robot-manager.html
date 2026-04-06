@@ -1411,6 +1411,7 @@ function signV4WS(endpoint, credentials) {
       'X-Amz-Algorithm':     'AWS4-HMAC-SHA256',
       'X-Amz-Credential':    `${accessKeyId}/${credScope}`,
       'X-Amz-Date':          datetime,
+      'X-Amz-Expires':       '86400',
       'X-Amz-SignedHeaders': 'host',
     };
     if (sessionToken) params['X-Amz-Security-Token'] = sessionToken;
