@@ -1472,8 +1472,9 @@ async function connectMqtt() {
 
     client.on('connect', () => {
       console.log('[MQTT] ✅ connect event fired');
-      updateMqttStatus('connected', 'Robot connecté');
+      STATE.mqttClient = client; // s'assurer que c'est bien le client actif
       STATE.mqttConnected = true;
+      updateMqttStatus('connected', 'Robot connecté');
       // S'abonner aux topics du robot
       if (CONFIG.ROBOT_SERIAL) {
         client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/status`);
