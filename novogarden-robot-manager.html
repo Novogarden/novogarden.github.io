@@ -1411,15 +1411,13 @@ function signV4WS(endpoint, credentials) {
     const datetime = date + 'T' + now.toISOString().slice(11,19).replace(/:/g,'') + 'Z';
     const credScope = `${date}/${region}/${service}/aws4_request`;
 
-    // Paramètres à signer (ordre alphabétique strict)
+    // Paramètres à signer — X-Amz-Security-Token EXCLU du signing pour IoT WebSocket
     const qp = {
       'X-Amz-Algorithm':     'AWS4-HMAC-SHA256',
       'X-Amz-Credential':    `${accessKeyId}/${credScope}`,
       'X-Amz-Date':          datetime,
       'X-Amz-SignedHeaders': 'host',
     };
-    if (sessionToken) qp['X-Amz-Security-Token'] = sessionToken;
-
     const canonicalQS = Object.keys(qp).sort().map(k => enc(k)+'='+enc(qp[k])).join('&');
 
     // Canonical request
@@ -1442,7 +1440,10 @@ function signV4WS(endpoint, credentials) {
     const kSigning = await hmacSHA256(kService, 'aws4_request');
     const signature = toHex(await hmacSHA256(kSigning, stringToSign));
 
-    return `wss://${endpoint}/mqtt?${canonicalQS}&X-Amz-Signature=${signature}`;
+    // X-Amz-Security-Token ajouté APRÈS la signature (pas dans le canonical)
+    let url = `wss://${endpoint}/mqtt?${canonicalQS}&X-Amz-Signature=${signature}`;
+    if (sessionToken) url += '&X-Amz-Security-Token=' + enc(sessionToken);
+    return url;
   })();
 }
 
@@ -1454,9 +1455,8 @@ async function connectMqtt() {
   updateMqttStatus('connecting', 'Connexion...');
   try {
     const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
-    // clientId = UUID de l'IdentityId (sans le préfixe région)
-    const rawId = STATE.awsCredentials.identityId || '';
-    const clientId = rawId.includes(':') ? rawId.split(':')[1] : (CONFIG.ROBOT_SERIAL || 'novogarden');
+    // clientId = IdentityId complet (requis par la policy IoT Cognito)
+    const clientId = STATE.awsCredentials.identityId || CONFIG.ROBOT_SERIAL;
     const client = mqtt.connect(url, {
       clientId: clientId,
       protocolId: 'MQTT', protocolVersion: 4,
