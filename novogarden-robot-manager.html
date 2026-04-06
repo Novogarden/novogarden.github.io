@@ -1383,59 +1383,66 @@ async function getAwsCredentials() {
    MQTT — AWS IoT Core via WebSocket + SigV4
    ============================================================ */
 function signV4WS(endpoint, credentials) {
-  const now = new Date();
-  const date   = now.toISOString().slice(0,10).replace(/-/g,'');
-  const time   = now.toISOString().slice(11,19).replace(/:/g,'');
-  const datetime = date + 'T' + time + 'Z';
-  const service = 'iotdevicegateway';
-  const region  = CONFIG.REGION;
   const { accessKeyId, secretAccessKey, sessionToken } = credentials;
+  const region  = CONFIG.REGION;
+  const service = 'iotdevicegateway';
 
-  async function hmac(key, str) {
-    const k = typeof key === 'string' ? new TextEncoder().encode(key) : key;
-    const ck = await crypto.subtle.importKey('raw', k, {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
-    return new Uint8Array(await crypto.subtle.sign('HMAC', ck, new TextEncoder().encode(str)));
+  const te = new TextEncoder();
+
+  async function hmacSHA256(key, data) {
+    const k = (key instanceof Uint8Array) ? key : te.encode(key);
+    const ck = await crypto.subtle.importKey('raw', k, { name:'HMAC', hash:'SHA-256' }, false, ['sign']);
+    return new Uint8Array(await crypto.subtle.sign('HMAC', ck, te.encode(data)));
   }
-  async function hex(buf) {
+  function toHex(buf) {
     return Array.from(buf).map(b => b.toString(16).padStart(2,'0')).join('');
   }
-  async function sha256hex(str) {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-    return hex(new Uint8Array(buf));
+  async function sha256(str) {
+    return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', te.encode(str))));
+  }
+  // RFC 3986 strict encode
+  function enc(v) {
+    return encodeURIComponent(String(v)).replace(/[!'()*]/g, c => '%'+c.charCodeAt(0).toString(16).toUpperCase());
   }
 
   return (async () => {
+    const now = new Date();
+    const date     = now.toISOString().slice(0,10).replace(/-/g,'');
+    const datetime = date + 'T' + now.toISOString().slice(11,19).replace(/:/g,'') + 'Z';
     const credScope = `${date}/${region}/${service}/aws4_request`;
 
-    // Construire les paramètres triés alphabétiquement (requis SigV4)
-    const params = {
+    // Paramètres à signer (ordre alphabétique strict)
+    const qp = {
       'X-Amz-Algorithm':     'AWS4-HMAC-SHA256',
       'X-Amz-Credential':    `${accessKeyId}/${credScope}`,
       'X-Amz-Date':          datetime,
+      'X-Amz-Expires':       '86400',
       'X-Amz-SignedHeaders': 'host',
     };
-    if (sessionToken) params['X-Amz-Security-Token'] = sessionToken;
+    if (sessionToken) qp['X-Amz-Security-Token'] = sessionToken;
 
-    // Trier alphabétiquement et encoder
-    const enc = v => encodeURIComponent(v).replace(/[!'()*]/g, c => '%'+c.charCodeAt(0).toString(16).toUpperCase());
-    const canonicalQS = Object.keys(params).sort()
-      .map(k => enc(k) + '=' + enc(params[k])).join('&');
+    const canonicalQS = Object.keys(qp).sort().map(k => enc(k)+'='+enc(qp[k])).join('&');
 
-    const canonical = [
+    // Canonical request
+    const canonicalReq = [
       'GET',
       '/mqtt',
       canonicalQS,
-      `host:${endpoint}\n`,
+      'host:' + endpoint + '\n',
       'host',
-      await sha256hex(''),
+      await sha256(''),
     ].join('\n');
 
-    const toSign = ['AWS4-HMAC-SHA256', datetime, credScope, await sha256hex(canonical)].join('\n');
-    const sigKey = await hmac(
-      await hmac(await hmac(await hmac('AWS4'+secretAccessKey, date), region), service),
-      'aws4_request'
-    );
-    const signature = await hex(await hmac(sigKey, toSign));
+    // String to sign
+    const stringToSign = ['AWS4-HMAC-SHA256', datetime, credScope, await sha256(canonicalReq)].join('\n');
+
+    // Signing key
+    const kDate    = await hmacSHA256('AWS4' + secretAccessKey, date);
+    const kRegion  = await hmacSHA256(kDate, region);
+    const kService = await hmacSHA256(kRegion, service);
+    const kSigning = await hmacSHA256(kService, 'aws4_request');
+    const signature = toHex(await hmacSHA256(kSigning, stringToSign));
+
     return `wss://${endpoint}/mqtt?${canonicalQS}&X-Amz-Signature=${signature}`;
   })();
 }
