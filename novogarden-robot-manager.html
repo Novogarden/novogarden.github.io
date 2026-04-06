@@ -1465,9 +1465,16 @@ async function connectMqtt() {
   }
   try {
     const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
-    // IoT policy souvent liée au clientId = identityId
-    const uuid = (STATE.awsCredentials?.identityId || '').replace('eu-west-1:', '').replace(/:/g,'-') || Math.random().toString(16).slice(2,10);
-    const clientId = uuid;
+    // Extraire le sub du id_token (Cognito User Pool sub)
+    let cognitoSub = '';
+    try {
+      const payload = JSON.parse(atob(STATE.tokens.id_token.split('.')[1]));
+      cognitoSub = payload.sub || '';
+      console.log('[MQTT] JWT claims:', JSON.stringify({sub: payload.sub, iss: payload.iss, aud: payload.aud, email: payload.email, 'cognito:username': payload['cognito:username']}));
+    } catch(e) {}
+    const identityUuid = (STATE.awsCredentials?.identityId || '').replace('eu-west-1:', '');
+    // Essayer le sub comme clientId (policy souvent: clientId = ${cognito-identity.amazonaws.com:sub})
+    const clientId = cognitoSub || identityUuid || ('novogarden-' + Math.random().toString(16).slice(2,10));
     console.log('[MQTT] connexion clientId:', clientId);
     const client = mqtt.connect(url, {
       clientId: clientId,
