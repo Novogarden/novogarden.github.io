@@ -1470,10 +1470,8 @@ async function connectMqtt() {
     });
     STATE.mqttClient = client;
 
-    client.on('packetreceive', p => console.log('[MQTT] PKT RCV:', p.cmd, p.returnCode));
-    client.on('packetsend',    p => console.log('[MQTT] PKT SND:', p.cmd));
-
     client.on('connect', () => {
+      console.log('[MQTT] ✅ connect event fired');
       updateMqttStatus('connected', 'Robot connecté');
       STATE.mqttConnected = true;
       // S'abonner aux topics du robot
