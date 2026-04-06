@@ -1453,11 +1453,16 @@ async function connectMqtt() {
     return;
   }
   updateMqttStatus('connecting', 'Connexion...');
+  // Détruire l'ancien client si existant
+  if (STATE.mqttClient) {
+    try { STATE.mqttClient.end(true); } catch(e) {}
+    STATE.mqttClient = null;
+    await new Promise(r => setTimeout(r, 300));
+  }
   try {
     const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
-    console.log('[MQTT] URL générée, connexion...');
     const clientId = 'novogarden-' + Math.random().toString(16).slice(2,10);
-    console.log('[MQTT] clientId:', clientId);
+    console.log('[MQTT] connexion clientId:', clientId);
     const client = mqtt.connect(url, {
       clientId: clientId,
       protocolId: 'MQTT', protocolVersion: 4,
