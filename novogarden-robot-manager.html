@@ -1447,18 +1447,21 @@ function signV4WS(endpoint, credentials) {
   })();
 }
 
+let _mqttConnecting = false;
 async function connectMqtt() {
   if (CONFIG.IOT_ENDPOINT.includes('VOTRE_')) {
     updateMqttStatus('error', 'Endpoint non configuré');
     return;
   }
+  if (_mqttConnecting) return; // éviter appels simultanés
+  _mqttConnecting = true;
   updateMqttStatus('connecting', 'Connexion...');
   // Détruire l'ancien client sans déclencher ses callbacks
   if (STATE.mqttClient) {
     const old = STATE.mqttClient;
-    STATE.mqttClient = null; // dissocie avant end() pour que close() soit ignoré
+    STATE.mqttClient = null;
     try { old.removeAllListeners(); old.end(true); } catch(e) {}
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 300));
   }
   try {
     const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
@@ -1472,18 +1475,23 @@ async function connectMqtt() {
     STATE.mqttClient = client;
 
     client.on('connect', () => {
-      console.log('[MQTT] ✅ connect event fired');
-      STATE.mqttClient = client; // s'assurer que c'est bien le client actif
+      console.log('[MQTT] ✅ connect event fired at', new Date().toISOString());
+      _mqttConnecting = false;
+      STATE.mqttClient = client;
       STATE.mqttConnected = true;
       updateMqttStatus('connected', 'Robot connecté');
-      // S'abonner aux topics du robot
+      // S'abonner aux topics du robot (lymow uniquement — shadow optionnel)
       if (CONFIG.ROBOT_SERIAL) {
-        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/status`);
-        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/telemetry`);
-        client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/update/accepted`);
-        client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get/accepted`);
-        // Demander l'état courant
-        client.publish(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get`, '{}');
+        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/status`, (err) => {
+          if (err) console.warn('[MQTT] sub status err:', err.message);
+        });
+        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/telemetry`, (err) => {
+          if (err) console.warn('[MQTT] sub telemetry err:', err.message);
+        });
+        // Shadow — commenté temporairement pour éviter déconnexion si policy absente
+        // client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/update/accepted`);
+        // client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get/accepted`);
+        // client.publish(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get`, '{}');
       }
     });
 
@@ -1492,13 +1500,19 @@ async function connectMqtt() {
     });
 
     client.on('error', (err) => {
-      console.error('MQTT error:', err);
+      console.error('[MQTT] error:', err);
       showToast('❌ MQTT erreur: ' + (err.message || JSON.stringify(err)).slice(0,120), 'red');
       updateMqttStatus('error', 'Erreur connexion');
     });
 
     client.on('close', () => {
-      if (STATE.mqttClient !== client) return;
+      const ts = new Date().toISOString();
+      if (STATE.mqttClient !== client) {
+        console.log('[MQTT] close (ancien client ignoré) at', ts);
+        return;
+      }
+      console.log('[MQTT] close (client actif) at', ts);
+      _mqttConnecting = false;
       STATE.mqttConnected = false;
       updateMqttStatus('', 'Déconnecté');
       updateRobotStatus('offline');
@@ -1506,9 +1520,11 @@ async function connectMqtt() {
 
     client.on('offline', () => {
       if (STATE.mqttClient !== client) return;
+      console.log('[MQTT] offline at', new Date().toISOString());
     });
   } catch(e) {
     console.error('MQTT connect error:', e);
+    _mqttConnecting = false;
     showToast('❌ MQTT exception: ' + e.message, 'red');
     updateMqttStatus('error', 'Connexion impossible');
   }
