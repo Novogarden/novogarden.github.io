@@ -1453,11 +1453,12 @@ async function connectMqtt() {
     return;
   }
   updateMqttStatus('connecting', 'Connexion...');
-  // Détruire l'ancien client si existant
+  // Détruire l'ancien client sans déclencher ses callbacks
   if (STATE.mqttClient) {
-    try { STATE.mqttClient.end(true); } catch(e) {}
-    STATE.mqttClient = null;
-    await new Promise(r => setTimeout(r, 300));
+    const old = STATE.mqttClient;
+    STATE.mqttClient = null; // dissocie avant end() pour que close() soit ignoré
+    try { old.removeAllListeners(); old.end(true); } catch(e) {}
+    await new Promise(r => setTimeout(r, 200));
   }
   try {
     const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
