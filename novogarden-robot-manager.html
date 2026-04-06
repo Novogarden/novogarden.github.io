@@ -1298,6 +1298,50 @@ function logout() {
 /* ============================================================
    AWS CREDENTIALS (Cognito Identity Pool)
    ============================================================ */
+async function probeApiGateway() {
+  const base = 'https://eigc6a2ds9.execute-api.eu-west-1.amazonaws.com';
+  const token = STATE.tokens?.id_token || '';
+  const accessToken = STATE.tokens?.access_token || '';
+  const paths = [
+    '/prod/iot/credentials',
+    '/prod/mqtt/credentials',
+    '/prod/device/credentials',
+    '/prod/iot',
+    '/prod/mqtt',
+    '/prod/user',
+    '/prod/me',
+    '/prod/robot',
+    '/prod/',
+    '/v1/iot/credentials',
+    '/v1/mqtt',
+    '/v1/user',
+    '/v1/me',
+    '/v1/',
+    '/iot/credentials',
+    '/mqtt',
+    '/',
+  ];
+  console.log('[API-GW] probe', base, '— nb paths:', paths.length);
+  for (const path of paths) {
+    try {
+      const r = await fetch(base + path, {
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'x-access-token': accessToken,
+        },
+      });
+      const body = await r.text();
+      console.log(`[API-GW] ${path} → ${r.status}: ${body.slice(0, 200)}`);
+      if (r.status !== 403 && r.status !== 404 && r.status !== 401) {
+        console.log('[API-GW] ✅ RÉPONSE INTÉRESSANTE sur', path);
+      }
+    } catch(e) {
+      console.log(`[API-GW] ${path} → ERREUR: ${e.message}`);
+    }
+  }
+  console.log('[API-GW] probe terminé');
+}
+
 async function getAwsCredentials() {
   if (CONFIG.IDENTITY_POOL_ID.includes('VOTRE_')) {
     showToast('⚠️ Identity Pool non configuré', 'orange');
@@ -1489,19 +1533,8 @@ async function connectMqtt() {
       STATE.mqttClient = client;
       STATE.mqttConnected = true;
       updateMqttStatus('connected', 'Robot connecté');
-      console.log('[MQTT] test subscribe lymow/device avec clientId=identityId');
-      setTimeout(() => {
-        if (STATE.mqttClient !== client) return;
-        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/status`, (err) => {
-          console.log('[MQTT] sub lymow/device/status:', err ? 'ERREUR: '+err.message : '✅ OK');
-        });
-      }, 500);
-      setTimeout(() => {
-        if (STATE.mqttClient !== client) return;
-        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/telemetry`, (err) => {
-          console.log('[MQTT] sub lymow/device/telemetry:', err ? 'ERREUR: '+err.message : '✅ OK');
-        });
-      }, 1500);
+      console.log('[MQTT] connecté — probe API Gateway Lymow');
+      probeApiGateway();
     });
 
     client.on('message', (topic, payload) => {
