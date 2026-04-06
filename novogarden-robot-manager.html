@@ -1480,9 +1480,30 @@ async function connectMqtt() {
       STATE.mqttClient = client;
       STATE.mqttConnected = true;
       updateMqttStatus('connected', 'Robot connecté');
-      // TEST: aucun subscribe pour vérifier que la connexion reste stable
-      // Si la connexion tient sans subscribe → la policy bloque les topics
-      console.log('[MQTT] connecté sans subscribe — test stabilité');
+      console.log('[MQTT] connecté — test topics shadow AWS');
+      // Test 1: shadow topics AWS ($aws/things/...)
+      setTimeout(() => {
+        if (STATE.mqttClient !== client) return;
+        console.log('[MQTT] subscribe shadow get/accepted...');
+        client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get/accepted`, (err) => {
+          console.log('[MQTT] sub shadow/get/accepted:', err ? 'ERREUR: '+err.message : 'OK');
+        });
+      }, 500);
+      setTimeout(() => {
+        if (STATE.mqttClient !== client) return;
+        console.log('[MQTT] subscribe shadow update/delta...');
+        client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/update/delta`, (err) => {
+          console.log('[MQTT] sub shadow/update/delta:', err ? 'ERREUR: '+err.message : 'OK');
+        });
+      }, 1500);
+      // Test 2: lymow/device après 3s si toujours connecté
+      setTimeout(() => {
+        if (STATE.mqttClient !== client) return;
+        console.log('[MQTT] subscribe lymow/device/status...');
+        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/status`, (err) => {
+          console.log('[MQTT] sub lymow/device/status:', err ? 'ERREUR: '+err.message : 'OK');
+        });
+      }, 3000);
     });
 
     client.on('message', (topic, payload) => {
