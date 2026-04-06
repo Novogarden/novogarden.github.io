@@ -28,6 +28,12 @@ const CONFIG = {
 
   // Numéro de série du robot
   ROBOT_SERIAL: 'LR011A12A17B5198',
+
+  // thingName IoT (capturé via ADB logs)
+  THING_NAME: 'device_ad38ab3ee028',
+  // Topics MQTT réels
+  TOPIC_SUB:  '/device/device_ad38ab3ee028/pboutput',  // robot → app
+  TOPIC_PUB:  '/device/device_ad38ab3ee028/pbinput',   // app → robot
 };
 </script>
 
@@ -1298,90 +1304,6 @@ function logout() {
 /* ============================================================
    AWS CREDENTIALS (Cognito Identity Pool)
    ============================================================ */
-async function sigV4Http(method, url, body, credentials) {
-  const { accessKeyId, secretAccessKey, sessionToken } = credentials;
-  const te = new TextEncoder();
-  async function hmacSHA256(key, data) {
-    const k = key instanceof Uint8Array ? key : te.encode(key);
-    const ck = await crypto.subtle.importKey('raw', k, {name:'HMAC',hash:'SHA-256'}, false, ['sign']);
-    return new Uint8Array(await crypto.subtle.sign('HMAC', ck, te.encode(data)));
-  }
-  function toHex(b) { return Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join(''); }
-  async function sha256(s) { return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', te.encode(s)))); }
-
-  const u = new URL(url);
-  const now = new Date();
-  const date = now.toISOString().slice(0,10).replace(/-/g,'');
-  const datetime = date + 'T' + now.toISOString().slice(11,19).replace(/:/g,'') + 'Z';
-  const region = CONFIG.REGION;
-  const service = 'execute-api';
-  const credScope = `${date}/${region}/${service}/aws4_request`;
-  const bodyStr = body || '';
-  const payloadHash = await sha256(bodyStr);
-
-  const headers = {
-    'host': u.hostname,
-    'x-amz-date': datetime,
-    'x-amz-security-token': sessionToken || '',
-  };
-  const signedHeaderKeys = Object.keys(headers).sort();
-  const canonicalHeaders = signedHeaderKeys.map(k => k+':'+headers[k]).join('\n') + '\n';
-  const signedHeaders = signedHeaderKeys.join(';');
-
-  const canonicalReq = [method, u.pathname, u.search.slice(1), canonicalHeaders, signedHeaders, payloadHash].join('\n');
-  const stringToSign = ['AWS4-HMAC-SHA256', datetime, credScope, await sha256(canonicalReq)].join('\n');
-  const kDate    = await hmacSHA256('AWS4'+secretAccessKey, date);
-  const kRegion  = await hmacSHA256(kDate, region);
-  const kService = await hmacSHA256(kRegion, service);
-  const kSign    = await hmacSHA256(kService, 'aws4_request');
-  const signature = toHex(await hmacSHA256(kSign, stringToSign));
-
-  const authHeader = `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-  return fetch(url, {
-    method,
-    headers: {
-      'Authorization': authHeader,
-      'X-Amz-Date': datetime,
-      'X-Amz-Security-Token': sessionToken || '',
-      ...(body ? {'Content-Type': 'application/json'} : {}),
-    },
-    body: body || undefined,
-  });
-}
-
-async function probeApiGateway() {
-  const base = 'https://eigc6a2ds9.execute-api.eu-west-1.amazonaws.com';
-  const creds = STATE.awsCredentials;
-  if (!creds) { console.log('[API-GW] pas de credentials'); return; }
-
-  const paths = [
-    '/prod/',
-    '/prod/iot',
-    '/prod/mqtt',
-    '/prod/user',
-    '/prod/me',
-    '/prod/robot',
-    '/prod/mower',
-    '/prod/mowers',
-    '/prod/device',
-    '/prod/devices',
-    '/prod/robots',
-    '/prod/config',
-    '/prod/iot/config',
-    '/prod/iot/topics',
-  ];
-  console.log('[API-GW] probe SigV4 IAM —', base);
-  for (const path of paths) {
-    try {
-      const r = await sigV4Http('GET', base + path, null, creds);
-      const body = await r.text();
-      console.log(`[API-GW] ${path} → ${r.status}: ${body.slice(0, 300)}`);
-    } catch(e) {
-      console.log(`[API-GW] ${path} → ERREUR: ${e.message}`);
-    }
-  }
-  console.log('[API-GW] probe terminé');
-}
 
 async function getAwsCredentials() {
   if (CONFIG.IDENTITY_POOL_ID.includes('VOTRE_')) {
@@ -1550,16 +1472,7 @@ async function connectMqtt() {
   }
   try {
     const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
-    // Extraire le sub du id_token (Cognito User Pool sub)
-    let cognitoSub = '';
-    try {
-      const payload = JSON.parse(atob(STATE.tokens.id_token.split('.')[1]));
-      cognitoSub = payload.sub || '';
-      console.log('[MQTT] JWT claims:', JSON.stringify({sub: payload.sub, iss: payload.iss, aud: payload.aud, email: payload.email, 'cognito:username': payload['cognito:username']}));
-    } catch(e) {}
-    const identityUuid = (STATE.awsCredentials?.identityId || '').replace('eu-west-1:', '');
-    // Essayer le sub comme clientId (policy souvent: clientId = ${cognito-identity.amazonaws.com:sub})
-    const clientId = cognitoSub || identityUuid || ('novogarden-' + Math.random().toString(16).slice(2,10));
+    const clientId = 'novogarden-' + Math.random().toString(16).slice(2,10);
     console.log('[MQTT] connexion clientId:', clientId);
     const client = mqtt.connect(url, {
       clientId: clientId,
@@ -1574,12 +1487,19 @@ async function connectMqtt() {
       STATE.mqttClient = client;
       STATE.mqttConnected = true;
       updateMqttStatus('connected', 'Robot connecté');
-      console.log('[MQTT] connecté — probe API Gateway Lymow');
-      probeApiGateway();
+      // Topics réels capturés via ADB logcat
+      client.subscribe(CONFIG.TOPIC_SUB, (err) => {
+        if (err) {
+          console.error('[MQTT] sub error:', err.message);
+          updateMqttStatus('error', 'Subscribe refusé');
+        } else {
+          console.log('[MQTT] ✅ subscribed to', CONFIG.TOPIC_SUB);
+        }
+      });
     });
 
     client.on('message', (topic, payload) => {
-      handleMqttMessage(topic, payload.toString());
+      handleMqttMessage(topic, payload); // raw Buffer — protobuf binaire
     });
 
     client.on('error', (err) => {
@@ -1613,25 +1533,93 @@ async function connectMqtt() {
   }
 }
 
+// Décodeur protobuf wire-format minimal (sans .proto schema)
+function decodeProtobuf(bytes) {
+  const result = {};
+  let pos = 0;
+  function readVarint() {
+    let val = 0, shift = 0;
+    while (pos < bytes.length) {
+      const b = bytes[pos++];
+      val |= (b & 0x7f) << shift;
+      if (shift > 28) { // éviter overflow JS 32-bit
+        // lire le reste sans stocker (varint long)
+        while (pos < bytes.length && (bytes[pos++] & 0x80));
+        return val;
+      }
+      shift += 7;
+      if (!(b & 0x80)) break;
+    }
+    return val;
+  }
+  while (pos < bytes.length) {
+    const startPos = pos;
+    const tag = readVarint();
+    if (tag === 0 && pos === startPos + 1) break; // padding zéro
+    const fieldNum = tag >>> 3;
+    const wireType = tag & 0x7;
+    const key = 'f' + fieldNum;
+    try {
+      if (wireType === 0) {
+        const v = readVarint();
+        result[key] = result[key] !== undefined ? [].concat(result[key], v) : v;
+      } else if (wireType === 2) {
+        const len = readVarint();
+        const sub = bytes.slice(pos, pos + len);
+        pos += len;
+        // Tenter décodage UTF-8, sinon hex
+        try {
+          const str = new TextDecoder('utf-8', {fatal: true}).decode(sub);
+          result[key] = str;
+        } catch(e) {
+          result[key] = Array.from(sub).map(b => b.toString(16).padStart(2,'0')).join('');
+        }
+      } else if (wireType === 1) { pos += 8; result[key] = '[64bit]'; }
+      else if (wireType === 5)   { pos += 4; result[key] = '[32bit]'; }
+      else break;
+    } catch(e) { break; }
+  }
+  return result;
+}
+
 function handleMqttMessage(topic, payload) {
-  try {
-    const data = JSON.parse(payload);
-    // AWS IoT Shadow
-    if (topic.includes('shadow')) {
-      const state = data.state?.reported || data.state?.desired || {};
-      if (state.status)  updateRobotStatus(state.status);
-      if (state.battery != null) updateBattery(state.battery);
-      if (state.serial)  { CONFIG.ROBOT_SERIAL = state.serial; localStorage.setItem('ng_serial', state.serial); }
-    }
-    // Telemetry directe
-    if (topic.includes('telemetry') || topic.includes('status')) {
-      if (data.status)   updateRobotStatus(data.status);
-      if (data.battery != null) updateBattery(data.battery);
-      if (data.mowing_surface) STATE.dailyStats.surface += data.mowing_surface;
-      updateDashStats();
-    }
-    addActivity(topic.split('/').pop(), payload);
-  } catch(e) {}
+  // payload = Buffer (mqtt.js) ou Uint8Array
+  let bytes;
+  if (payload instanceof Uint8Array) {
+    bytes = payload;
+  } else if (Buffer && payload instanceof Buffer) {
+    bytes = new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+  } else {
+    // fallback string → bytes latin-1
+    bytes = new Uint8Array(payload.length);
+    for (let i = 0; i < payload.length; i++) bytes[i] = payload.charCodeAt(i) & 0xff;
+  }
+
+  const b64 = btoa(String.fromCharCode(...bytes));
+  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' ');
+  console.log('[MQTT] ▼ topic:', topic);
+  console.log('[MQTT]   base64:', b64);
+  console.log('[MQTT]   hex:', hex);
+
+  const fields = decodeProtobuf(bytes);
+  console.log('[MQTT]   protobuf fields:', JSON.stringify(fields));
+
+  // Mapping empirique — sera affiné après analyse des logs
+  // f1 ou f2 souvent = type de message (varint enum)
+  // f3 souvent = statut robot (varint enum)
+  // f4 souvent = batterie (varint %)
+  const STATUS_MAP = {
+    0: 'idle', 1: 'mowing', 2: 'docking', 3: 'charging',
+    4: 'remote_control', 5: 'error', 6: 'emergency_stop',
+  };
+  if (fields.f3 != null && typeof fields.f3 === 'number') {
+    updateRobotStatus(STATUS_MAP[fields.f3] || 'status_' + fields.f3);
+  }
+  if (fields.f4 != null && typeof fields.f4 === 'number' && fields.f4 >= 0 && fields.f4 <= 100) {
+    updateBattery(fields.f4);
+  }
+
+  addActivity(topic.split('/').pop(), b64);
 }
 
 /* ============================================================
