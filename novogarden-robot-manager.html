@@ -1416,7 +1416,6 @@ function signV4WS(endpoint, credentials) {
       'X-Amz-Algorithm':     'AWS4-HMAC-SHA256',
       'X-Amz-Credential':    `${accessKeyId}/${credScope}`,
       'X-Amz-Date':          datetime,
-      'X-Amz-Expires':       '86400',
       'X-Amz-SignedHeaders': 'host',
     };
     if (sessionToken) qp['X-Amz-Security-Token'] = sessionToken;
@@ -1455,10 +1454,11 @@ async function connectMqtt() {
   updateMqttStatus('connecting', 'Connexion...');
   try {
     const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
-    // L'IoT policy Lymow autorise le clientId = Cognito Identity ID
-    const identityId = STATE.awsCredentials.identityId || CONFIG.ROBOT_SERIAL;
+    // clientId = UUID de l'IdentityId (sans le préfixe région)
+    const rawId = STATE.awsCredentials.identityId || '';
+    const clientId = rawId.includes(':') ? rawId.split(':')[1] : (CONFIG.ROBOT_SERIAL || 'novogarden');
     const client = mqtt.connect(url, {
-      clientId: identityId,
+      clientId: clientId,
       protocolId: 'MQTT', protocolVersion: 4,
       clean: true, reconnectPeriod: 0,
     });
