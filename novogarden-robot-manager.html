@@ -1448,9 +1448,10 @@ async function connectMqtt() {
   try {
     const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
     const client = mqtt.connect(url, {
-      clientId: 'novogarden-' + Math.random().toString(16).slice(2,10),
+      clientId: CONFIG.ROBOT_SERIAL || ('novogarden-' + Math.random().toString(16).slice(2,10)),
       protocolId: 'MQTT', protocolVersion: 4,
-      clean: true, reconnectPeriod: 5000,
+      clean: true, reconnectPeriod: 0,
+      wsOptions: { protocols: ['mqtt'] },
     });
     STATE.mqttClient = client;
 
