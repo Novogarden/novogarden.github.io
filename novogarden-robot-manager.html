@@ -1209,7 +1209,7 @@ async function showGoogleUrl() {
       code_challenge_method: 'S256',
       state,
     });
-    _pendingLoginUrl = `${CONFIG.COGNITO_DOMAIN}/login?${params}`;
+    _pendingLoginUrl = `${CONFIG.COGNITO_DOMAIN}/oauth2/authorize?${params}`;
     document.getElementById('google-url-text').value = _pendingLoginUrl;
     document.getElementById('google-url-box').style.display = 'block';
   } catch(e) {
