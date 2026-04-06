@@ -1480,30 +1480,32 @@ async function connectMqtt() {
       STATE.mqttClient = client;
       STATE.mqttConnected = true;
       updateMqttStatus('connected', 'Robot connecté');
-      console.log('[MQTT] connecté — test topics shadow AWS');
-      // Test 1: shadow topics AWS ($aws/things/...)
-      setTimeout(() => {
-        if (STATE.mqttClient !== client) return;
-        console.log('[MQTT] subscribe shadow get/accepted...');
-        client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get/accepted`, (err) => {
-          console.log('[MQTT] sub shadow/get/accepted:', err ? 'ERREUR: '+err.message : 'OK');
-        });
-      }, 500);
-      setTimeout(() => {
-        if (STATE.mqttClient !== client) return;
-        console.log('[MQTT] subscribe shadow update/delta...');
-        client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/update/delta`, (err) => {
-          console.log('[MQTT] sub shadow/update/delta:', err ? 'ERREUR: '+err.message : 'OK');
-        });
-      }, 1500);
-      // Test 2: lymow/device après 3s si toujours connecté
-      setTimeout(() => {
-        if (STATE.mqttClient !== client) return;
-        console.log('[MQTT] subscribe lymow/device/status...');
-        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/status`, (err) => {
-          console.log('[MQTT] sub lymow/device/status:', err ? 'ERREUR: '+err.message : 'OK');
-        });
-      }, 3000);
+      // Test patterns avec IdentityId — un par un avec 2s d'intervalle
+      // Si un topic cause close, on arrête. Sinon on teste le suivant.
+      const identityId = STATE.awsCredentials?.identityId || '';
+      const uuid = identityId.replace('eu-west-1:', ''); // c90db555-a12b-...
+      const serial = CONFIG.ROBOT_SERIAL;
+      const topicsToTest = [
+        `lymow/users/${identityId}/#`,
+        `lymow/users/${uuid}/#`,
+        `lymow/user/${identityId}/#`,
+        `lymow/user/${uuid}/#`,
+        `users/${identityId}/#`,
+        `users/${uuid}/#`,
+        `lymow/mobile/${identityId}/#`,
+        `lymow/device/${serial}/user/${identityId}/#`,
+      ];
+      console.log('[MQTT] IdentityId:', identityId);
+      topicsToTest.forEach((topic, i) => {
+        setTimeout(() => {
+          if (STATE.mqttClient !== client) { console.log('[MQTT] client mort, stop tests'); return; }
+          console.log(`[MQTT] test #${i+1}: subscribe "${topic}"`);
+          client.subscribe(topic, (err) => {
+            if (err) console.warn(`[MQTT] #${i+1} ERREUR: ${err.message}`);
+            else console.log(`[MQTT] #${i+1} ✅ OK: "${topic}"`);
+          });
+        }, i * 2000 + 500);
+      });
     });
 
     client.on('message', (topic, payload) => {
