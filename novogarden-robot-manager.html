@@ -1370,6 +1370,7 @@ async function getAwsCredentials() {
       accessKeyId:     Credentials.AccessKeyId,
       secretAccessKey: Credentials.SecretKey,
       sessionToken:    Credentials.SessionToken,
+      identityId:      IdentityId,
     };
   } catch(e) {
     console.error('Credentials error:', e);
@@ -1448,11 +1449,12 @@ async function connectMqtt() {
   updateMqttStatus('connecting', 'Connexion...');
   try {
     const url = await signV4WS(CONFIG.IOT_ENDPOINT, STATE.awsCredentials);
+    // L'IoT policy Lymow autorise le clientId = Cognito Identity ID
+    const identityId = STATE.awsCredentials.identityId || CONFIG.ROBOT_SERIAL;
     const client = mqtt.connect(url, {
-      clientId: CONFIG.ROBOT_SERIAL,
+      clientId: identityId,
       protocolId: 'MQTT', protocolVersion: 4,
       clean: true, reconnectPeriod: 0,
-      transformWsUrl: (u) => u,
     });
     STATE.mqttClient = client;
 
