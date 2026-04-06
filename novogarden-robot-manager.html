@@ -1480,19 +1480,9 @@ async function connectMqtt() {
       STATE.mqttClient = client;
       STATE.mqttConnected = true;
       updateMqttStatus('connected', 'Robot connecté');
-      // S'abonner aux topics du robot (lymow uniquement — shadow optionnel)
-      if (CONFIG.ROBOT_SERIAL) {
-        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/status`, (err) => {
-          if (err) console.warn('[MQTT] sub status err:', err.message);
-        });
-        client.subscribe(`lymow/device/${CONFIG.ROBOT_SERIAL}/telemetry`, (err) => {
-          if (err) console.warn('[MQTT] sub telemetry err:', err.message);
-        });
-        // Shadow — commenté temporairement pour éviter déconnexion si policy absente
-        // client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/update/accepted`);
-        // client.subscribe(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get/accepted`);
-        // client.publish(`$aws/things/${CONFIG.ROBOT_SERIAL}/shadow/get`, '{}');
-      }
+      // TEST: aucun subscribe pour vérifier que la connexion reste stable
+      // Si la connexion tient sans subscribe → la policy bloque les topics
+      console.log('[MQTT] connecté sans subscribe — test stabilité');
     });
 
     client.on('message', (topic, payload) => {
