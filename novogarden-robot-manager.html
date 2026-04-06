@@ -1405,18 +1405,25 @@ function signV4WS(endpoint, credentials) {
 
   return (async () => {
     const credScope = `${date}/${region}/${service}/aws4_request`;
-    const qs = new URLSearchParams({
-      'X-Amz-Algorithm':    'AWS4-HMAC-SHA256',
-      'X-Amz-Credential':   `${accessKeyId}/${credScope}`,
-      'X-Amz-Date':         datetime,
-      'X-Amz-SignedHeaders':'host',
-    });
-    if (sessionToken) qs.set('X-Amz-Security-Token', sessionToken);
+
+    // Construire les paramètres triés alphabétiquement (requis SigV4)
+    const params = {
+      'X-Amz-Algorithm':     'AWS4-HMAC-SHA256',
+      'X-Amz-Credential':    `${accessKeyId}/${credScope}`,
+      'X-Amz-Date':          datetime,
+      'X-Amz-SignedHeaders': 'host',
+    };
+    if (sessionToken) params['X-Amz-Security-Token'] = sessionToken;
+
+    // Trier alphabétiquement et encoder
+    const enc = v => encodeURIComponent(v).replace(/[!'()*]/g, c => '%'+c.charCodeAt(0).toString(16).toUpperCase());
+    const canonicalQS = Object.keys(params).sort()
+      .map(k => enc(k) + '=' + enc(params[k])).join('&');
 
     const canonical = [
       'GET',
       '/mqtt',
-      qs.toString(),
+      canonicalQS,
       `host:${endpoint}\n`,
       'host',
       await sha256hex(''),
@@ -1428,8 +1435,7 @@ function signV4WS(endpoint, credentials) {
       'aws4_request'
     );
     const signature = await hex(await hmac(sigKey, toSign));
-    qs.set('X-Amz-Signature', signature);
-    return `wss://${endpoint}/mqtt?${qs}`;
+    return `wss://${endpoint}/mqtt?${canonicalQS}&X-Amz-Signature=${signature}`;
   })();
 }
 
