@@ -493,9 +493,15 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         </button>
       </div>
 
+      <div id="session-restore-btn" style="display:none;margin-top:8px;">
+        <button onclick="restoreSession()" style="width:100%;padding:12px;background:var(--green);color:white;border:none;border-radius:12px;font-size:13px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
+          ✅ Restaurer la session précédente
+        </button>
+      </div>
+      <div id="session-debug" style="margin-top:8px;font-size:10px;color:var(--grey);font-weight:500;text-align:center;"></div>
       <div class="login-note">
         Après "Se connecter avec Google" → l'app Lymow s'ouvre.<br>
-        Ouvre <strong>PCAPdroid</strong>, filtre "lymow", copie l'URL <code>myapp://callback/?code=…</code> et colle-la ci-dessus.
+        Copie l'URL <code>myapp://callback/?code=…</code> et colle-la ci-dessus.
       </div>
     </div>
   </div>
@@ -1224,6 +1230,25 @@ function copyGoogleUrl() {
 
 async function prepareLoginUrl() {} // conservé pour compatibilité
 
+async function restoreSession() {
+  const saved = localStorage.getItem('ng_tokens');
+  if (!saved) { showToast('Aucune session', 'red'); return; }
+  STATE.tokens = JSON.parse(saved);
+  try {
+    const payload = JSON.parse(atob(STATE.tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    if (Date.now()/1000 > payload.exp) {
+      showToast('Token expiré — tentative refresh…', 'orange');
+      const ok = await refreshTokens();
+      if (!ok) { showToast('Refresh échoué — reconnexion requise', 'red'); return; }
+    }
+  } catch(e) { showToast('Token illisible', 'red'); return; }
+  STATE.authenticated = true;
+  showAppShell();
+  STATE.awsCredentials = await getAwsCredentials();
+  if (STATE.awsCredentials) await connectMqtt();
+  else updateMqttStatus('error', 'Credentials non disponibles');
+}
+
 async function exchangeCode(code) {
   const verifier = localStorage.getItem('pkce_verifier');
   if (!verifier) return null;
@@ -1846,7 +1871,24 @@ function showLoginScreen() {
     if (el) { el.style.display = 'none'; el.classList.remove('active'); }
   });
   document.getElementById('notif-panel')?.classList.remove('open');
-  prepareLoginUrl(); // pré-génère le lien Google avant que l'utilisateur clique
+  // Vérifier si une session existe déjà
+  const saved = localStorage.getItem('ng_tokens');
+  const dbg = document.getElementById('session-debug');
+  const btn = document.getElementById('session-restore-btn');
+  if (saved) {
+    try {
+      const tokens = JSON.parse(saved);
+      const payload = JSON.parse(atob(tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      const exp = new Date(payload.exp * 1000).toLocaleTimeString();
+      const expired = Date.now()/1000 > payload.exp;
+      if (dbg) dbg.textContent = (expired ? '⚠️ Session expirée à ' : '✅ Session valide jusqu\'à ') + exp;
+      if (btn) btn.style.display = 'block';
+    } catch(e) {
+      if (dbg) dbg.textContent = 'Aucune session valide';
+    }
+  } else {
+    if (dbg) dbg.textContent = 'Aucune session sauvegardée';
+  }
 }
 
 async function init() {
