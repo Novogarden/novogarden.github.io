@@ -463,57 +463,51 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
     <div class="login-card">
       <h2>Connexion</h2>
 
-      <!-- Session sauvegardée → connexion automatique -->
+      <!-- Session sauvegardée → reprise auto -->
       <div id="session-restore-btn" style="display:none;margin-bottom:12px;">
         <button onclick="restoreSession()" style="width:100%;padding:14px;background:var(--green);color:white;border:none;border-radius:12px;font-size:14px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
           ✅ Reprendre la session
         </button>
-        <!-- Bouton export session (visible si déjà connecté sur PC) -->
-        <button onclick="exportSession()" style="width:100%;padding:10px;background:none;border:2px solid var(--grey-light);border-radius:12px;font-size:12px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;margin-top:8px;color:var(--dark);">
-          📋 Copier la session (pour mobile)
-        </button>
       </div>
 
-      <!-- Import session depuis PC (pour mobile) -->
-      <div id="import-session-block" style="margin-bottom:12px;">
-        <div style="font-size:11px;font-weight:700;color:var(--grey);margin-bottom:6px;">Coller la session depuis le PC</div>
-        <textarea id="import-session-input" rows="2" placeholder="Colle ici le code de session copié sur le PC..."
-          style="width:100%;padding:10px 12px;border:2px solid var(--grey-light);border-radius:12px;font-size:11px;font-weight:500;font-family:monospace;color:var(--dark);outline:none;margin-bottom:8px;resize:none;"
-          oninput="this.style.borderColor=this.value?'var(--green)':'var(--grey-light)'"></textarea>
-        <button onclick="importSession()" style="width:100%;padding:13px;background:var(--dark);color:white;border:none;border-radius:12px;font-size:13px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
-          Se connecter
+      <!-- Bouton PC : envoyer la session au téléphone via HiveMQ -->
+      <div id="send-to-mobile-btn" style="display:none;margin-bottom:12px;">
+        <button onclick="sendSessionToMobile()" style="width:100%;padding:14px;background:var(--blue);color:white;border:none;border-radius:12px;font-size:14px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
+          📱 Envoyer au téléphone
         </button>
-      </div>
-
-      <div style="text-align:center;font-size:11px;color:var(--grey);font-weight:600;margin:8px 0;">— ou —</div>
-
-      <!-- ÉTAPE 1 : ouvrir Google (PC uniquement) -->
-      <div id="step1" style="margin-bottom:12px;">
-        <button onclick="startGoogleLogin()" id="btn-google-login"
-          style="width:100%;padding:14px;background:white;border:2px solid var(--grey-light);border-radius:12px;font-size:14px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
-          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-          Se connecter avec Google
-        </button>
-      </div>
-
-      <!-- ÉTAPE 2 : coller l'URL de retour -->
-      <div id="step2" style="display:none;">
-        <div style="background:#FFF8E1;border-radius:12px;padding:12px;margin-bottom:10px;border-left:3px solid var(--orange);">
-          <div style="font-size:11px;font-weight:700;color:var(--dark);margin-bottom:4px;">Après connexion Google :</div>
-          <div style="font-size:11px;font-weight:500;color:#555;line-height:1.5;">Chrome va afficher une erreur. <strong>Copie l'URL</strong> dans la barre d'adresse (commence par <code>myapp://</code>) et colle-la ci-dessous.</div>
+        <div id="send-pin" style="display:none;text-align:center;margin-top:10px;">
+          <div style="font-size:11px;color:var(--grey);margin-bottom:4px;">Code PIN — entre-le sur le téléphone :</div>
+          <div id="pin-display" style="font-size:36px;font-weight:800;letter-spacing:8px;color:var(--dark);"></div>
         </div>
-        <input id="callback-url-input" type="url" placeholder="myapp://callback/?code=..."
-          style="width:100%;padding:10px 12px;border:2px solid var(--grey-light);border-radius:12px;font-size:11px;font-weight:500;font-family:monospace;color:var(--dark);outline:none;margin-bottom:8px;"
+      </div>
+
+      <!-- Bouton mobile : recevoir la session du PC -->
+      <div style="margin-bottom:12px;">
+        <button onclick="receiveSessionFromPC()" id="receive-btn" style="width:100%;padding:14px;background:var(--dark);color:white;border:none;border-radius:12px;font-size:14px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
+          📥 Recevoir depuis le PC
+        </button>
+        <div id="pin-input-block" style="display:none;margin-top:10px;">
+          <input id="pin-input" type="number" placeholder="Code PIN à 4 chiffres"
+            style="width:100%;padding:12px;border:2px solid var(--green);border-radius:12px;font-size:20px;font-weight:800;text-align:center;font-family:'Montserrat',sans-serif;outline:none;letter-spacing:4px;"
+            oninput="if(this.value.length===4)confirmPin()">
+        </div>
+      </div>
+
+      <div style="text-align:center;font-size:11px;color:var(--grey);font-weight:600;margin:8px 0;">— ou connexion directe —</div>
+
+      <!-- Google login (PC) -->
+      <div id="step1" style="margin-bottom:4px;">
+        <button onclick="startGoogleLogin()" style="width:100%;padding:13px;background:white;border:2px solid var(--grey-light);border-radius:12px;font-size:13px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
+          <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          Se connecter avec Google (PC)
+        </button>
+      </div>
+      <div id="step2" style="display:none;margin-top:8px;">
+        <input id="callback-url-input" placeholder="myapp://callback/?code=..."
+          style="width:100%;padding:10px 12px;border:2px solid var(--grey-light);border-radius:12px;font-size:11px;font-family:monospace;color:var(--dark);outline:none;margin-bottom:8px;"
           oninput="this.style.borderColor=this.value?'var(--green)':'var(--grey-light)'"
           onkeydown="if(event.key==='Enter')loginWithCallbackUrl()">
-        <button onclick="loginWithCallbackUrl()" id="login-btn"
-          style="width:100%;padding:13px;background:var(--green);color:white;border:none;border-radius:12px;font-size:13px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
-          Valider
-        </button>
-        <button onclick="document.getElementById('step1').style.display='block';document.getElementById('step2').style.display='none';"
-          style="width:100%;padding:8px;background:none;border:none;font-size:11px;font-weight:600;color:var(--grey);cursor:pointer;margin-top:4px;">
-          Recommencer
-        </button>
+        <button onclick="loginWithCallbackUrl()" style="width:100%;padding:13px;background:var(--green);color:white;border:none;border-radius:12px;font-size:13px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">Valider</button>
       </div>
 
       <div id="session-debug" style="margin-top:8px;font-size:10px;color:var(--grey);font-weight:500;text-align:center;"></div>
@@ -1194,15 +1188,64 @@ async function generateCodeChallenge(verifier) {
   return btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
 }
 
-function exportSession() {
+let _pinSendTimer = null;
+
+function sendSessionToMobile() {
   const saved = localStorage.getItem('ng_tokens');
-  if (!saved) { showToast('Aucune session à exporter', 'red'); return; }
-  const code = btoa(saved);
-  navigator.clipboard.writeText(code).then(() => {
-    showToast('Session copiée ✅ — colle-la sur le téléphone', 'green');
-  }).catch(() => {
-    // Fallback : afficher dans un prompt
-    prompt('Copie ce code sur le téléphone :', code);
+  if (!saved) { showToast('Aucune session', 'red'); return; }
+  const pin = String(Math.floor(1000 + Math.random() * 9000));
+  const topic = 'novogarden/session/' + pin;
+  document.getElementById('pin-display').textContent = pin;
+  document.getElementById('send-pin').style.display = 'block';
+  showToast('En attente du téléphone…', 'blue');
+  // Publier la session chiffrée sur HiveMQ, topic = PIN
+  const mqttClient = mqtt.connect(CONFIG.RELAY_BROKER, { clientId: 'ng-send-' + Math.random().toString(16).slice(2,8), clean: true });
+  mqttClient.on('connect', () => {
+    mqttClient.publish(topic, btoa(saved), { retain: true, qos: 1 });
+    showToast('Session prête — entre le PIN sur le téléphone', 'green');
+    // Nettoyer après 5 minutes
+    _pinSendTimer = setTimeout(() => {
+      mqttClient.publish(topic, '', { retain: true, qos: 1 }); // effacer
+      mqttClient.end();
+      document.getElementById('send-pin').style.display = 'none';
+    }, 300000);
+  });
+}
+
+function receiveSessionFromPC() {
+  document.getElementById('pin-input-block').style.display = 'block';
+  document.getElementById('pin-input').value = '';
+  document.getElementById('pin-input').focus();
+}
+
+function confirmPin() {
+  const pin = document.getElementById('pin-input').value.trim();
+  if (pin.length !== 4) return;
+  const topic = 'novogarden/session/' + pin;
+  showToast('Connexion…', 'blue');
+  const mqttClient = mqtt.connect(CONFIG.RELAY_BROKER, { clientId: 'ng-recv-' + Math.random().toString(16).slice(2,8), clean: true });
+  mqttClient.on('connect', () => {
+    mqttClient.subscribe(topic, () => {
+      setTimeout(() => {
+        if (!STATE.authenticated) {
+          mqttClient.end();
+          showToast('PIN incorrect ou expiré', 'red');
+          document.getElementById('pin-input').value = '';
+        }
+      }, 8000);
+    });
+  });
+  mqttClient.on('message', (t, payload) => {
+    const data = payload.toString();
+    if (!data) { showToast('Session expirée', 'red'); mqttClient.end(); return; }
+    try {
+      const tokens = JSON.parse(atob(data));
+      localStorage.setItem('ng_tokens', JSON.stringify(tokens));
+      STATE.tokens = tokens;
+      mqttClient.end();
+      showToast('Connecté ✅', 'green');
+      restoreSession();
+    } catch(e) { showToast('Erreur session', 'red'); mqttClient.end(); }
   });
 }
 
@@ -2420,18 +2463,18 @@ function showLoginScreen() {
   const saved = localStorage.getItem('ng_tokens');
   const dbg = document.getElementById('session-debug');
   const btn = document.getElementById('session-restore-btn');
+  const sendBtn = document.getElementById('send-to-mobile-btn');
   if (saved) {
     try {
       const tokens = JSON.parse(saved);
-      const payload = JSON.parse(atob(tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-      const exp = new Date(payload.exp * 1000).toLocaleTimeString();
-      const expired = Date.now()/1000 > payload.exp;
-      if (dbg) dbg.textContent = (expired ? '⚠️ Session expirée à ' : '✅ Session valide jusqu\'à ') + exp;
       if (btn) btn.style.display = 'block';
+      if (sendBtn) sendBtn.style.display = 'block';
+      if (dbg) dbg.textContent = '✅ Session sauvegardée';
     } catch(e) {
       if (dbg) dbg.textContent = 'Aucune session valide';
     }
   } else {
+    if (sendBtn) sendBtn.style.display = 'none';
     if (dbg) dbg.textContent = 'Aucune session sauvegardée';
   }
 }
