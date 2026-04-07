@@ -1961,6 +1961,10 @@ async function connectBle() {
     STATE.bleConnected = true;
     updateBleStatus('connected');
     showToast('BLE connecté !', 'green');
+    // Wake Lock — empêche Android de mettre Chrome en veille
+    if ('wakeLock' in navigator) {
+      try { STATE.wakeLock = await navigator.wakeLock.request('screen'); console.log('[BLE] Wake Lock actif'); } catch(e) {}
+    }
   } catch(e) {
     console.error('[BLE] erreur:', e);
     showToast('BLE erreur: ' + e.message, 'red');
@@ -1969,12 +1973,43 @@ async function connectBle() {
 }
 
 function onBleDisconnect() {
-  console.log('[BLE] déconnecté');
+  console.log('[BLE] déconnecté — tentative reconnexion dans 3s');
   STATE.bleConnected = false;
   BLE_STATE.writeChar = null;
   BLE_STATE.notifyChar = null;
   updateBleStatus('disconnected');
-  showToast('BLE déconnecté', 'orange');
+  showToast('BLE déconnecté — reconnexion…', 'orange');
+  // Reconnexion automatique si on a encore le device
+  setTimeout(async () => {
+    if (BLE_STATE.device && !STATE.bleConnected) {
+      try {
+        updateBleStatus('connecting');
+        const server = await BLE_STATE.device.gatt.connect();
+        BLE_STATE.server = server;
+        const services = await server.getPrimaryServices();
+        let writeChar = null, notifyChar = null;
+        for (const svc of services) {
+          const chars = await svc.getCharacteristics();
+          for (const c of chars) {
+            if (c.properties.writeWithoutResponse || c.properties.write) writeChar = writeChar || c;
+            if (c.properties.notify) notifyChar = notifyChar || c;
+          }
+        }
+        if (writeChar) {
+          BLE_STATE.writeChar = writeChar;
+          BLE_STATE.notifyChar = notifyChar;
+          if (notifyChar) { await notifyChar.startNotifications(); notifyChar.addEventListener('characteristicvaluechanged', onBleNotify); }
+          STATE.bleConnected = true;
+          updateBleStatus('connected');
+          showToast('BLE reconnecté ✅', 'green');
+        }
+      } catch(e) {
+        console.log('[BLE] reconnexion échouée:', e.message);
+        updateBleStatus('error');
+        showToast('BLE reconnexion échouée', 'red');
+      }
+    }
+  }, 3000);
 }
 
 function onBleNotify(event) {
