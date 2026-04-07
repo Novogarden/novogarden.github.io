@@ -1604,19 +1604,28 @@ function handleMqttMessage(topic, payload) {
   const fields = decodeProtobuf(bytes);
   console.log('[MQTT]   protobuf fields:', JSON.stringify(fields));
 
-  // Mapping empirique — sera affiné après analyse des logs
-  // f1 ou f2 souvent = type de message (varint enum)
-  // f3 souvent = statut robot (varint enum)
-  // f4 souvent = batterie (varint %)
+  // Mapping confirmé via ADB logcat (---✅-💖-状态更新---robotStatus: N)
   const STATUS_MAP = {
-    0: 'idle', 1: 'mowing', 2: 'docking', 3: 'charging',
-    4: 'remote_control', 5: 'error', 6: 'emergency_stop',
+    1: 'waiting',   // ROBOT_STATUS_WAITING
+    2: 'mowing',    // ROBOT_STATUS_CLEANING
+    3: 'paused',    // ROBOT_STATUS_PAUSE (d'après transitions CLEANING→3→CLEANING)
+    4: 'docking',   // ROBOT_STATUS_DOCKING
+    5: 'charging',  // ROBOT_STATUS_CHARGING
+    6: 'emergency', // ROBOT_STATUS_EMERGENCY_STOP
   };
-  if (fields.f3 != null && typeof fields.f3 === 'number') {
-    updateRobotStatus(STATUS_MAP[fields.f3] || 'status_' + fields.f3);
+  // f5 = robotStatus dans pboutput (même structure que pbinput : f2=49, f5=valeur)
+  if (fields.f5 != null && typeof fields.f5 === 'number' && STATUS_MAP[fields.f5]) {
+    updateRobotStatus(STATUS_MAP[fields.f5]);
+    console.log('[MQTT] status décodé:', STATUS_MAP[fields.f5], '(f5=' + fields.f5 + ')');
   }
-  if (fields.f4 != null && typeof fields.f4 === 'number' && fields.f4 >= 0 && fields.f4 <= 100) {
-    updateBattery(fields.f4);
+  // batterie : chercher dans plusieurs champs possibles
+  for (const k of ['f4','f6','f3']) {
+    const v = fields[k];
+    if (v != null && typeof v === 'number' && v >= 0 && v <= 100) {
+      updateBattery(v);
+      console.log('[MQTT] batterie décodée:', v, '(' + k + ')');
+      break;
+    }
   }
 
   addActivity(topic.split('/').pop(), b64);
@@ -1625,20 +1634,49 @@ function handleMqttMessage(topic, payload) {
 /* ============================================================
    COMMANDES ROBOT
    ============================================================ */
+// Commandes protobuf — format MQTT confirmé via ADB logcat : JSON {"message":"<base64>"}
+// Structure générale : f2=49 (header), f5=type_cmd
+// Canal : l'app officielle utilise BLE pour boutons ET MQTT pour stop/query
+const CMD_B64 = {
+  // CONFIRMÉ via MQTT : forceWaiting (Force STOP)
+  // Capturé : "forceWaiting,data:EDEoHA==" → robotStatus WAITING
+  STOP:    'EDEoHA==',          // f2=49, f5=28 — CONFIRMÉ MQTT ✅
+
+  // BLE button toggle (f5=20) — testé via MQTT, à valider :
+  // Dans l'app : WAITING→CLEANING, CLEANING→PAUSE, PAUSE→WAITING ou DOCK
+  START:   'EDEoFDgCSgIoAQ==',  // f2=49,f5=20,f7=2,f9.f5=1 — bouton BLE, test MQTT
+  PAUSE:   'EDEoFDgCSgIoAQ==',  // même bouton toggle
+  DOCK:    'EDEoFDgCSgIoAQ==',  // TODO: capturer la commande DOCK séparément
+
+  // Queries (pour debug)
+  QUERY_MAP:   'EDEoE7oBBAgAIAE=',  // f5=19
+  QUERY_DEBUG: 'EDFKAlgB',
+};
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 function sendCommand(cmd, params = {}) {
   if (!STATE.mqttConnected) {
     showToast('Robot non connecté', 'red');
     return;
   }
-  const serial = CONFIG.ROBOT_SERIAL;
-  if (!serial) { showToast('Numéro de série inconnu', 'red'); return; }
 
-  const payload = JSON.stringify({ command: cmd, ...params, ts: Date.now() });
-  // Essayer plusieurs formats de topic (à affiner selon le vrai protocole)
-  STATE.mqttClient.publish(`lymow/device/${serial}/command`, payload);
-  STATE.mqttClient.publish(`$aws/things/${serial}/shadow/update`, JSON.stringify({
-    state: { desired: { command: cmd, ...params } }
-  }));
+  const b64 = CMD_B64[cmd];
+  if (!b64) {
+    showToast('⏳ Commande ' + cmd + ' pas encore capturée', 'orange');
+    console.warn('[CMD] commande inconnue:', cmd, '— capture ADB nécessaire');
+    return;
+  }
+
+  // Format confirmé via ADB logcat : JSON {"message":"<base64_protobuf>"}
+  const payload = JSON.stringify({ message: b64 });
+  console.log('[CMD]', cmd, '→ topic:', CONFIG.TOPIC_PUB, '→ payload:', payload);
+  STATE.mqttClient.publish(CONFIG.TOPIC_PUB, payload);
 
   const labels = { START:'Démarrage', STOP:'Arrêt', DOCK:'Retour base', PAUSE:'Pause', EDGE:'Tonte bords', SPOT:'Tonte spot' };
   showToast(labels[cmd] || cmd, 'green');
@@ -2427,10 +2465,7 @@ function deleteRobot(i) {
 
 function fleetCmd(serial, cmd) {
   if (!STATE.mqttConnected) { showToast('Non connecté', 'red'); return; }
-  const payload = JSON.stringify({ command:cmd, ts:Date.now() });
-  STATE.mqttClient.publish(`lymow/device/${serial}/command`, payload);
-  STATE.mqttClient.publish(`$aws/things/${serial}/shadow/update`, JSON.stringify({state:{desired:{command:cmd}}}));
-  showToast(`${cmd} → ${serial}`, 'green');
+  sendCommand(cmd); // utilise le bon topic et le bon format protobuf
 }
 
 function broadcastCommand() { document.getElementById('modal-broadcast').classList.add('open'); }
