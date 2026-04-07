@@ -1961,18 +1961,29 @@ async function connectBle() {
     STATE.bleConnected = true;
     updateBleStatus('connected');
     showToast('BLE connecté !', 'green');
+
+    // Handshake initial — QUERY_MAP déclenche la session sur le robot
+    async function bleSendRaw(b64) {
+      if (!BLE_STATE.writeChar) return;
+      try { await BLE_STATE.writeChar.writeValueWithoutResponse(new TextEncoder().encode(b64)); } catch(e) {}
+    }
+    await bleSendRaw(CMD_B64.QUERY_MAP);
+    console.log('[BLE] handshake QUERY_MAP envoyé');
+
     // Wake Lock — empêche Android de mettre Chrome en veille
     if ('wakeLock' in navigator) {
       try { STATE.wakeLock = await navigator.wakeLock.request('screen'); console.log('[BLE] Wake Lock actif'); } catch(e) {}
     }
-    // Heartbeat BLE toutes les 15s — EDEoNA== = f2=49,f5=52 (heartbeat capturé)
+    // Heartbeat BLE toutes les 15s — alterne QUERY_MAP et EDEoNA==
     if (STATE.bleHeartbeat) clearInterval(STATE.bleHeartbeat);
+    let _hbToggle = false;
     STATE.bleHeartbeat = setInterval(async () => {
       if (!BLE_STATE.writeChar || !STATE.bleConnected) { clearInterval(STATE.bleHeartbeat); return; }
       try {
-        const hb = new TextEncoder().encode('EDEoNA==');
+        _hbToggle = !_hbToggle;
+        const hb = new TextEncoder().encode(_hbToggle ? CMD_B64.QUERY_MAP : 'EDEoNA==');
         await BLE_STATE.writeChar.writeValueWithoutResponse(hb);
-        console.log('[BLE] heartbeat ✓');
+        console.log('[BLE] heartbeat ✓', _hbToggle ? 'QUERY_MAP' : 'NA');
       } catch(e) { console.log('[BLE] heartbeat error:', e.message); }
     }, 15000);
   } catch(e) {
