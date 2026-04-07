@@ -20,20 +20,23 @@ const CONFIG = {
   IDENTITY_POOL_ID: 'eu-west-1:c905a69c-0153-401a-a879-0c50b892015b',
   REGION:           'eu-west-1',
 
-  // AWS IoT Core — capturé via PCAPdroid
+  // AWS IoT Core
   IOT_ENDPOINT: 'a3j5zqqo5iuph9-ats.iot.eu-west-1.amazonaws.com',
 
-  // redirect_uri enregistrée dans Cognito (scheme natif Android)
+  // redirect_uri enregistrée dans Cognito
   REDIRECT_URI: 'myapp://callback/',
 
-  // Numéro de série du robot
+  // Robot
   ROBOT_SERIAL: 'LR011A12A17B5198',
+  THING_NAME:   'device_ad38ab3ee028',
+  TOPIC_SUB:    '/device/device_ad38ab3ee028/pboutput',
+  TOPIC_PUB:    '/device/device_ad38ab3ee028/pbinput',
 
-  // thingName IoT (capturé via ADB logs)
-  THING_NAME: 'device_ad38ab3ee028',
-  // Topics MQTT réels
-  TOPIC_SUB:  '/device/device_ad38ab3ee028/pboutput',  // robot → app
-  TOPIC_PUB:  '/device/device_ad38ab3ee028/pbinput',   // app → robot
+  // Relais MQTT public (HiveMQ) — communication PC ↔ Téléphone-gateway
+  // Topics relais : novogarden/LR011A12A17B5198/cmd et /status
+  RELAY_BROKER:     'wss://broker.hivemq.com:8884/mqtt',
+  RELAY_TOPIC_CMD:  'novogarden/LR011A12A17B5198/cmd',    // PC → téléphone
+  RELAY_TOPIC_STATUS: 'novogarden/LR011A12A17B5198/status', // téléphone → PC
 };
 </script>
 
@@ -536,13 +539,28 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
     </div>
   </div>
 
-  <!-- MQTT + BLE status bar -->
-  <div id="mqtt-bar" class="mqtt-bar" style="display:none;">
+  <!-- MQTT + BLE + Relay status bar -->
+  <div id="mqtt-bar" class="mqtt-bar" style="display:none;gap:6px;">
     <div class="mqtt-dot" id="mqtt-dot"></div>
     <span id="mqtt-status-txt">Déconnecté</span>
-    <button onclick="connectBle()" style="margin-left:auto;background:rgba(255,255,255,0.2);border:none;color:white;font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;cursor:pointer;">
-      <span id="ble-status">⚫ BLE</span>
-    </button>
+    <span style="margin-left:auto;display:flex;gap:5px;align-items:center;">
+      <!-- Mode switcher -->
+      <button id="mode-gateway-btn" onclick="setMode('gateway')" title="Téléphone près du robot — BLE actif"
+        style="background:rgba(255,255,255,0.2);border:none;color:white;font-size:10px;font-weight:700;padding:3px 7px;border-radius:8px;cursor:pointer;opacity:0.4;">
+        📡 Gateway
+      </button>
+      <button id="mode-remote-btn" onclick="setMode('remote')" title="PC distant — commandes via relais"
+        style="background:rgba(255,255,255,0.2);border:none;color:white;font-size:10px;font-weight:700;padding:3px 7px;border-radius:8px;cursor:pointer;opacity:1;">
+        💻 Remote
+      </button>
+      <!-- BLE (mode gateway seulement) -->
+      <button onclick="connectBle()" id="ble-btn"
+        style="background:rgba(255,255,255,0.2);border:none;color:white;font-size:10px;font-weight:700;padding:3px 7px;border-radius:8px;cursor:pointer;display:none;">
+        <span id="ble-status">⚫ BLE</span>
+      </button>
+      <!-- Relais status -->
+      <span id="relay-status" style="font-size:10px;font-weight:700;color:white;">🔴 Remote</span>
+    </span>
   </div>
 
   <!-- ============================================================
@@ -1243,14 +1261,23 @@ async function restoreSession() {
   const saved = localStorage.getItem('ng_tokens');
   if (!saved) { showToast('Aucune session', 'red'); return; }
   STATE.tokens = JSON.parse(saved);
-  try {
-    const payload = JSON.parse(atob(STATE.tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-    if (Date.now()/1000 > payload.exp) {
-      showToast('Token expiré — tentative refresh…', 'orange');
-      const ok = await refreshTokens();
-      if (!ok) { showToast('Refresh échoué — reconnexion requise', 'red'); return; }
-    }
-  } catch(e) { showToast('Token illisible', 'red'); return; }
+  // Si pas d'id_token mais refresh_token présent → refresh direct
+  if (!STATE.tokens.id_token && STATE.tokens.refresh_token) {
+    showToast('Renouvellement session…', 'blue');
+    const ok = await refreshTokens();
+    if (!ok) { showToast('Refresh échoué — reconnexion requise', 'red'); return; }
+  } else if (STATE.tokens.id_token) {
+    try {
+      const payload = JSON.parse(atob(STATE.tokens.id_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+      if (Date.now()/1000 > payload.exp) {
+        showToast('Token expiré — renouvellement…', 'orange');
+        const ok = await refreshTokens();
+        if (!ok) { showToast('Refresh échoué — reconnexion requise', 'red'); return; }
+      }
+    } catch(e) { showToast('Token illisible', 'red'); return; }
+  } else {
+    showToast('Session invalide', 'red'); return;
+  }
   STATE.authenticated = true;
   showAppShell();
   STATE.awsCredentials = await getAwsCredentials();
@@ -1616,19 +1643,29 @@ function handleMqttMessage(topic, payload) {
     5: 'charging',  // ROBOT_STATUS_CHARGING
     6: 'emergency', // ROBOT_STATUS_EMERGENCY_STOP
   };
-  // f5 = robotStatus dans pboutput (même structure que pbinput : f2=49, f5=valeur)
+  let robotStatus = null, battery = null;
+
+  // f5 = robotStatus dans pboutput
   if (fields.f5 != null && typeof fields.f5 === 'number' && STATUS_MAP[fields.f5]) {
-    updateRobotStatus(STATUS_MAP[fields.f5]);
-    console.log('[MQTT] status décodé:', STATUS_MAP[fields.f5], '(f5=' + fields.f5 + ')');
+    robotStatus = STATUS_MAP[fields.f5];
+    updateRobotStatus(robotStatus);
+    console.log('[MQTT] status décodé:', robotStatus, '(f5=' + fields.f5 + ')');
   }
   // batterie : chercher dans plusieurs champs possibles
   for (const k of ['f4','f6','f3']) {
     const v = fields[k];
     if (v != null && typeof v === 'number' && v >= 0 && v <= 100) {
+      battery = v;
       updateBattery(v);
       console.log('[MQTT] batterie décodée:', v, '(' + k + ')');
       break;
     }
+  }
+
+  // En mode gateway : relayer le statut au PC via HiveMQ
+  if (RELAY.mode === 'gateway' && RELAY.connected && (robotStatus || battery != null)) {
+    const statusMsg = JSON.stringify({ status: robotStatus, battery });
+    RELAY.client.publish(CONFIG.RELAY_TOPIC_STATUS, statusMsg);
   }
 
   addActivity(topic.split('/').pop(), b64);
@@ -1759,6 +1796,94 @@ function onBleNotify(event) {
   } catch(e) {}
 }
 
+// ============================================================
+// MODE : 'gateway' (téléphone près du robot) ou 'remote' (PC/tablette)
+// Stocké dans localStorage pour persister entre sessions
+// ============================================================
+const RELAY = {
+  client: null,
+  connected: false,
+  mode: localStorage.getItem('ng_mode') || 'remote', // 'gateway' | 'remote'
+};
+
+function setMode(mode) {
+  RELAY.mode = mode;
+  localStorage.setItem('ng_mode', mode);
+  document.getElementById('mode-gateway-btn').style.opacity = mode === 'gateway' ? '1' : '0.4';
+  document.getElementById('mode-remote-btn').style.opacity  = mode === 'remote'  ? '1' : '0.4';
+  const bleBtn = document.getElementById('ble-btn');
+  if (bleBtn) bleBtn.style.display = mode === 'gateway' ? 'block' : 'none';
+  connectRelay();
+}
+
+function connectRelay() {
+  if (RELAY.client) { try { RELAY.client.end(true); } catch(e) {} }
+  const clientId = 'novogarden-' + RELAY.mode + '-' + Math.random().toString(16).slice(2,8);
+  const client = mqtt.connect(CONFIG.RELAY_BROKER, {
+    clientId, clean: true, reconnectPeriod: 5000, keepalive: 30,
+  });
+  RELAY.client = client;
+
+  client.on('connect', () => {
+    RELAY.connected = true;
+    console.log('[RELAY] connecté, mode:', RELAY.mode);
+    updateRelayStatus('connected');
+    if (RELAY.mode === 'gateway') {
+      // Téléphone : écoute les commandes du PC
+      client.subscribe(CONFIG.RELAY_TOPIC_CMD, err => {
+        if (!err) console.log('[RELAY] gateway — abonné CMD');
+      });
+    } else {
+      // PC : écoute le statut envoyé par le téléphone
+      client.subscribe(CONFIG.RELAY_TOPIC_STATUS, err => {
+        if (!err) console.log('[RELAY] remote — abonné STATUS');
+      });
+    }
+  });
+
+  client.on('message', (topic, payload) => {
+    const msg = payload.toString();
+    if (RELAY.mode === 'gateway' && topic === CONFIG.RELAY_TOPIC_CMD) {
+      // Téléphone reçoit une commande du PC → l'exécuter en BLE
+      console.log('[RELAY] commande reçue:', msg);
+      executeBleCommand(msg);
+    } else if (RELAY.mode === 'remote' && topic === CONFIG.RELAY_TOPIC_STATUS) {
+      // PC reçoit un statut du téléphone → mettre à jour l'UI
+      try {
+        const s = JSON.parse(msg);
+        if (s.status)  updateRobotStatus(s.status);
+        if (s.battery != null) updateBattery(s.battery);
+      } catch(e) {}
+    }
+  });
+
+  client.on('close', () => { RELAY.connected = false; updateRelayStatus('disconnected'); });
+  client.on('error', e => { console.error('[RELAY] error:', e.message); updateRelayStatus('error'); });
+}
+
+function updateRelayStatus(s) {
+  const el = document.getElementById('relay-status');
+  if (!el) return;
+  const map = { connected:'🟢', disconnected:'🔴', error:'🔴' };
+  el.textContent = (map[s]||'⚫') + ' ' + (RELAY.mode === 'gateway' ? 'Gateway' : 'Remote');
+}
+
+// Exécuter une commande BLE (appelé par le gateway quand il reçoit un relais)
+async function executeBleCommand(cmd) {
+  const b64 = CMD_B64[cmd];
+  if (!b64 || !BLE_STATE.writeChar) return;
+  try {
+    const encoded = new TextEncoder().encode(b64);
+    if (BLE_STATE.writeChar.properties.writeWithoutResponse) {
+      await BLE_STATE.writeChar.writeValueWithoutResponse(encoded);
+    } else {
+      await BLE_STATE.writeChar.writeValueWithResponse(encoded);
+    }
+    console.log('[BLE] cmd relayée:', cmd);
+    showToast('CMD: ' + cmd, 'green');
+  } catch(e) { console.error('[BLE] relay write error:', e.message); }
+}
+
 function updateBleStatus(status) {
   const el = document.getElementById('ble-status');
   if (!el) return;
@@ -1766,47 +1891,47 @@ function updateBleStatus(status) {
   el.textContent = map[status] || status;
 }
 
-// Envoi commande : BLE en priorité, MQTT en fallback (STOP seulement)
+// Envoi commande
 async function sendCommand(cmd, params = {}) {
-  const b64 = CMD_B64[cmd];
-  if (!b64) {
-    showToast('Commande inconnue: ' + cmd, 'orange');
+  const labels = { START:'Démarrage', STOP:'Arrêt', DOCK:'Retour base', PAUSE:'Pause', EDGE:'Tonte bords', SPOT:'Tonte spot' };
+
+  if (RELAY.mode === 'remote') {
+    // PC : envoie la commande au téléphone via relais MQTT
+    if (!RELAY.connected) { showToast('Relais non connecté', 'red'); return; }
+    RELAY.client.publish(CONFIG.RELAY_TOPIC_CMD, cmd);
+    console.log('[RELAY] cmd envoyée:', cmd);
+    showToast(labels[cmd] || cmd, 'green');
+    addActivity(`Commande: ${labels[cmd] || cmd}`, cmd, false);
     return;
   }
 
-  const labels = { START:'Démarrage', STOP:'Arrêt', DOCK:'Retour base', PAUSE:'Pause', EDGE:'Tonte bords', SPOT:'Tonte spot' };
+  // Mode gateway : exécuter en BLE directement
+  const b64 = CMD_B64[cmd];
+  if (!b64) { showToast('Commande inconnue: ' + cmd, 'orange'); return; }
 
-  // Priorité 1 : BLE
   if (BLE_STATE.writeChar) {
     try {
-      // Format BLE : string base64 en UTF-8 (comme l'app officielle)
       const encoded = new TextEncoder().encode(b64);
       if (BLE_STATE.writeChar.properties.writeWithoutResponse) {
         await BLE_STATE.writeChar.writeValueWithoutResponse(encoded);
       } else {
         await BLE_STATE.writeChar.writeValueWithResponse(encoded);
       }
-      console.log('[BLE] cmd envoyée:', cmd, b64);
+      console.log('[BLE] cmd envoyée:', cmd);
       showToast(labels[cmd] || cmd, 'green');
       addActivity(`Commande BLE: ${labels[cmd] || cmd}`, cmd, false);
       return;
-    } catch(e) {
-      console.error('[BLE] write error:', e);
-      showToast('BLE write erreur: ' + e.message, 'red');
-    }
+    } catch(e) { console.error('[BLE] error:', e); showToast('BLE erreur: ' + e.message, 'red'); }
   }
 
-  // Priorité 2 : MQTT (STOP seulement — les autres sont bloquées par la policy)
+  // Fallback STOP via AWS IoT
   if (STATE.mqttConnected && cmd === 'STOP') {
-    const payload = JSON.stringify({ message: b64 });
-    console.log('[MQTT] cmd:', cmd, payload);
-    STATE.mqttClient.publish(CONFIG.TOPIC_PUB, payload);
-    showToast(labels[cmd] + ' (MQTT)', 'green');
-    addActivity(`Commande MQTT: ${labels[cmd] || cmd}`, cmd, false);
+    STATE.mqttClient.publish(CONFIG.TOPIC_PUB, JSON.stringify({ message: b64 }));
+    showToast('Arrêt (MQTT)', 'green');
     return;
   }
 
-  showToast('Connecte le BLE d\'abord', 'red');
+  showToast('BLE non connecté — mode Gateway requis', 'red');
 }
 
 let driveInterval = null;
@@ -2277,6 +2402,8 @@ function showAppShell() {
   startWeatherWatch();
   renderNotifs();
   updateMapTerrainChips();
+  // Initialiser le mode et lancer le relais
+  setMode(RELAY.mode);
 }
 
 function loadSavedConfig() {
