@@ -1907,12 +1907,21 @@ async function sendCommand(cmd, params = {}) {
   const labels = { START:'Démarrage', STOP:'Arrêt', DOCK:'Retour base', PAUSE:'Pause', EDGE:'Tonte bords', SPOT:'Tonte spot' };
 
   if (RELAY.mode === 'remote') {
-    // PC : envoie la commande au téléphone via relais MQTT
+    const b64direct = CMD_B64[cmd];
+    // Priorité : publish direct AWS IoT si connecté (credentials authentifiés)
+    if (STATE.mqttConnected && b64direct) {
+      STATE.mqttClient.publish(CONFIG.TOPIC_PUB, JSON.stringify({ message: b64direct }));
+      console.log('[MQTT] cmd directe:', cmd, b64direct);
+      showToast(labels[cmd] || cmd, 'green');
+      addActivity(`Commande MQTT: ${labels[cmd] || cmd}`, cmd, false);
+      return;
+    }
+    // Fallback : relais HiveMQ → téléphone Gateway
     if (!RELAY.connected) { showToast('Relais non connecté', 'red'); return; }
     RELAY.client.publish(CONFIG.RELAY_TOPIC_CMD, cmd);
     console.log('[RELAY] cmd envoyée:', cmd);
     showToast(labels[cmd] || cmd, 'green');
-    addActivity(`Commande: ${labels[cmd] || cmd}`, cmd, false);
+    addActivity(`Commande relais: ${labels[cmd] || cmd}`, cmd, false);
     return;
   }
 
