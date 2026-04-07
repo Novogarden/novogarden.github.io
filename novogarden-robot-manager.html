@@ -1965,16 +1965,16 @@ async function connectBle() {
     if ('wakeLock' in navigator) {
       try { STATE.wakeLock = await navigator.wakeLock.request('screen'); console.log('[BLE] Wake Lock actif'); } catch(e) {}
     }
-    // Heartbeat BLE toutes les 5s — QUERY_DEBUG est une lecture neutre
+    // Keepalive passif : lecture GATT toutes les 8s (sans écrire au robot)
     if (STATE.bleHeartbeat) clearInterval(STATE.bleHeartbeat);
     STATE.bleHeartbeat = setInterval(async () => {
-      if (!BLE_STATE.writeChar || !STATE.bleConnected) { clearInterval(STATE.bleHeartbeat); return; }
+      if (!STATE.bleConnected) { clearInterval(STATE.bleHeartbeat); return; }
       try {
-        const hb = new TextEncoder().encode(CMD_B64.QUERY_DEBUG);
-        await BLE_STATE.writeChar.writeValueWithoutResponse(hb);
-        console.log('[BLE] heartbeat ✓');
-      } catch(e) { console.log('[BLE] heartbeat error:', e.message); }
-    }, 5000);
+        if (BLE_STATE.notifyChar) await BLE_STATE.notifyChar.readValue();
+        else if (BLE_STATE.writeChar) await BLE_STATE.writeChar.service.device.gatt.getPrimaryServices();
+        console.log('[BLE] keepalive ✓');
+      } catch(e) { console.log('[BLE] keepalive error:', e.message); }
+    }, 8000);
   } catch(e) {
     console.error('[BLE] erreur:', e);
     showToast('BLE erreur: ' + e.message, 'red');
