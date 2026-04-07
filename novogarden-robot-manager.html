@@ -1628,21 +1628,32 @@ function handleMqttMessage(topic, payload) {
   let bytes;
   if (payload instanceof Uint8Array) {
     bytes = payload;
-  } else if (Buffer && payload instanceof Buffer) {
+  } else if (typeof Buffer !== 'undefined' && payload instanceof Buffer) {
     bytes = new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
   } else {
-    // fallback string → bytes latin-1
     bytes = new Uint8Array(payload.length);
     for (let i = 0; i < payload.length; i++) bytes[i] = payload.charCodeAt(i) & 0xff;
   }
 
-  const b64 = btoa(String.fromCharCode(...bytes));
-  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' ');
   console.log('[MQTT] ▼ topic:', topic);
-  console.log('[MQTT]   base64:', b64);
-  console.log('[MQTT]   hex:', hex);
 
-  const fields = decodeProtobuf(bytes);
+  // Le robot envoie {"message":"<base64_protobuf>"} — unwrap le JSON
+  let protoBytes = bytes;
+  try {
+    const text = new TextDecoder().decode(bytes);
+    const json = JSON.parse(text);
+    if (json.message) {
+      const bin = atob(json.message);
+      protoBytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) protoBytes[i] = bin.charCodeAt(i);
+      console.log('[MQTT]   inner b64:', json.message);
+    }
+  } catch(e) { /* pas du JSON, traiter comme protobuf brut */ }
+
+  const hex = Array.from(protoBytes).map(b => b.toString(16).padStart(2,'0')).join(' ');
+  console.log('[MQTT]   proto hex:', hex);
+
+  const fields = decodeProtobuf(protoBytes);
   console.log('[MQTT]   protobuf fields:', JSON.stringify(fields));
 
   // Mapping confirmé via ADB logcat (---✅-💖-状态更新---robotStatus: N)
@@ -1656,20 +1667,59 @@ function handleMqttMessage(topic, payload) {
   };
   let robotStatus = null, battery = null;
 
-  // f5 = robotStatus dans pboutput
-  if (fields.f5 != null && typeof fields.f5 === 'number' && STATUS_MAP[fields.f5]) {
-    robotStatus = STATUS_MAP[fields.f5];
-    updateRobotStatus(robotStatus);
-    console.log('[MQTT] status décodé:', robotStatus, '(f5=' + fields.f5 + ')');
+  // Cherche une valeur numérique dans les champs (y compris sous-messages)
+  function findNum(obj, ...keys) {
+    for (const k of keys) {
+      const v = obj[k];
+      if (v != null && typeof v === 'number') return v;
+      if (v != null && typeof v === 'object') {
+        // sous-message : cherche f1..f10
+        for (let i = 1; i <= 10; i++) {
+          const vv = v['f'+i];
+          if (vv != null && typeof vv === 'number') return vv;
+        }
+      }
+    }
+    return null;
   }
-  // batterie : chercher dans plusieurs champs possibles
-  for (const k of ['f4','f6','f3']) {
+
+  // Statut : f5 direct ou sous-message f5.fx, ou f6.f1
+  const statusCandidates = [];
+  for (const k of ['f5','f6','f7','f8']) {
     const v = fields[k];
-    if (v != null && typeof v === 'number' && v >= 0 && v <= 100) {
-      battery = v;
-      updateBattery(v);
-      console.log('[MQTT] batterie décodée:', v, '(' + k + ')');
+    if (v != null && typeof v === 'number') statusCandidates.push([k, v]);
+    else if (v != null && typeof v === 'object') {
+      for (let i = 1; i <= 5; i++) {
+        const vv = v['f'+i];
+        if (vv != null && typeof vv === 'number') statusCandidates.push([k+'.f'+i, vv]);
+      }
+    }
+  }
+  console.log('[MQTT] status candidates:', JSON.stringify(statusCandidates));
+
+  for (const [path, val] of statusCandidates) {
+    if (STATUS_MAP[val]) {
+      robotStatus = STATUS_MAP[val];
+      updateRobotStatus(robotStatus);
+      console.log('[MQTT] status décodé:', robotStatus, '('+path+'='+val+')');
       break;
+    }
+  }
+
+  // Batterie : valeur 0-100 dans n'importe quel champ numérique
+  const allNums = [];
+  function collectNums(obj, prefix) {
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === 'number') allNums.push([prefix+k, v]);
+      else if (typeof v === 'object' && v != null) collectNums(v, prefix+k+'.');
+    }
+  }
+  collectNums(fields, '');
+  console.log('[MQTT] all numeric fields:', JSON.stringify(allNums));
+
+  for (const [path, val] of allNums) {
+    if (val >= 0 && val <= 100 && Number.isInteger(val)) {
+      if (battery === null) { battery = val; updateBattery(val); console.log('[MQTT] batterie:', val, '('+path+')'); }
     }
   }
 
