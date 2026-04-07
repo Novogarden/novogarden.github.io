@@ -468,9 +468,26 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         <button onclick="restoreSession()" style="width:100%;padding:14px;background:var(--green);color:white;border:none;border-radius:12px;font-size:14px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
           ✅ Reprendre la session
         </button>
+        <!-- Bouton export session (visible si déjà connecté sur PC) -->
+        <button onclick="exportSession()" style="width:100%;padding:10px;background:none;border:2px solid var(--grey-light);border-radius:12px;font-size:12px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;margin-top:8px;color:var(--dark);">
+          📋 Copier la session (pour mobile)
+        </button>
       </div>
 
-      <!-- ÉTAPE 1 : ouvrir Google -->
+      <!-- Import session depuis PC (pour mobile) -->
+      <div id="import-session-block" style="margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:700;color:var(--grey);margin-bottom:6px;">Coller la session depuis le PC</div>
+        <textarea id="import-session-input" rows="2" placeholder="Colle ici le code de session copié sur le PC..."
+          style="width:100%;padding:10px 12px;border:2px solid var(--grey-light);border-radius:12px;font-size:11px;font-weight:500;font-family:monospace;color:var(--dark);outline:none;margin-bottom:8px;resize:none;"
+          oninput="this.style.borderColor=this.value?'var(--green)':'var(--grey-light)'"></textarea>
+        <button onclick="importSession()" style="width:100%;padding:13px;background:var(--dark);color:white;border:none;border-radius:12px;font-size:13px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
+          Se connecter
+        </button>
+      </div>
+
+      <div style="text-align:center;font-size:11px;color:var(--grey);font-weight:600;margin:8px 0;">— ou —</div>
+
+      <!-- ÉTAPE 1 : ouvrir Google (PC uniquement) -->
       <div id="step1" style="margin-bottom:12px;">
         <button onclick="startGoogleLogin()" id="btn-google-login"
           style="width:100%;padding:14px;background:white;border:2px solid var(--grey-light);border-radius:12px;font-size:14px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
@@ -479,7 +496,7 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         </button>
       </div>
 
-      <!-- ÉTAPE 2 : coller l'URL de retour (s'affiche après clic) -->
+      <!-- ÉTAPE 2 : coller l'URL de retour -->
       <div id="step2" style="display:none;">
         <div style="background:#FFF8E1;border-radius:12px;padding:12px;margin-bottom:10px;border-left:3px solid var(--orange);">
           <div style="font-size:11px;font-weight:700;color:var(--dark);margin-bottom:4px;">Après connexion Google :</div>
@@ -1175,6 +1192,33 @@ async function generateCodeChallenge(verifier) {
   const data = new TextEncoder().encode(verifier);
   const digest = await crypto.subtle.digest('SHA-256', data);
   return btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+function exportSession() {
+  const saved = localStorage.getItem('ng_tokens');
+  if (!saved) { showToast('Aucune session à exporter', 'red'); return; }
+  const code = btoa(saved);
+  navigator.clipboard.writeText(code).then(() => {
+    showToast('Session copiée ✅ — colle-la sur le téléphone', 'green');
+  }).catch(() => {
+    // Fallback : afficher dans un prompt
+    prompt('Copie ce code sur le téléphone :', code);
+  });
+}
+
+function importSession() {
+  const raw = document.getElementById('import-session-input').value.trim();
+  if (!raw) { showToast('Code vide', 'red'); return; }
+  try {
+    const tokens = JSON.parse(atob(raw));
+    if (!tokens.refresh_token && !tokens.id_token) throw new Error('invalide');
+    localStorage.setItem('ng_tokens', JSON.stringify(tokens));
+    STATE.tokens = tokens;
+    showToast('Session importée, connexion…', 'blue');
+    restoreSession();
+  } catch(e) {
+    showToast('Code invalide', 'red');
+  }
 }
 
 async function startGoogleLogin() {
