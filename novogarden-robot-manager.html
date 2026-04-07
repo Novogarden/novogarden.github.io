@@ -1965,16 +1965,16 @@ async function connectBle() {
     if ('wakeLock' in navigator) {
       try { STATE.wakeLock = await navigator.wakeLock.request('screen'); console.log('[BLE] Wake Lock actif'); } catch(e) {}
     }
-    // Keepalive passif : lecture GATT toutes les 8s (sans écrire au robot)
+    // Heartbeat BLE toutes les 15s — EDEoNA== = f2=49,f5=52 (heartbeat capturé)
     if (STATE.bleHeartbeat) clearInterval(STATE.bleHeartbeat);
     STATE.bleHeartbeat = setInterval(async () => {
-      if (!STATE.bleConnected) { clearInterval(STATE.bleHeartbeat); return; }
+      if (!BLE_STATE.writeChar || !STATE.bleConnected) { clearInterval(STATE.bleHeartbeat); return; }
       try {
-        if (BLE_STATE.notifyChar) await BLE_STATE.notifyChar.readValue();
-        else if (BLE_STATE.writeChar) await BLE_STATE.writeChar.service.device.gatt.getPrimaryServices();
-        console.log('[BLE] keepalive ✓');
-      } catch(e) { console.log('[BLE] keepalive error:', e.message); }
-    }, 8000);
+        const hb = new TextEncoder().encode('EDEoNA==');
+        await BLE_STATE.writeChar.writeValueWithoutResponse(hb);
+        console.log('[BLE] heartbeat ✓');
+      } catch(e) { console.log('[BLE] heartbeat error:', e.message); }
+    }, 15000);
   } catch(e) {
     console.error('[BLE] erreur:', e);
     showToast('BLE erreur: ' + e.message, 'red');
