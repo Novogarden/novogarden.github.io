@@ -532,9 +532,19 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         <svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
         <span class="badge" id="notif-badge" style="display:none">0</span>
       </button>
+      <button class="icon-btn" onclick="sendSessionToMobile()" title="Envoyer session au téléphone">
+        <svg viewBox="0 0 24 24"><path d="M17 1H7C5.9 1 5 1.9 5 3v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm0 18H7V5h10v14zm-4 2h-2v-1h2v1z"/></svg>
+      </button>
       <button class="icon-btn" onclick="logout()">
         <svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
       </button>
+    </div>
+    <!-- PIN overlay -->
+    <div id="pin-overlay" style="display:none;position:absolute;top:100%;right:8px;background:white;border-radius:16px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,0.2);z-index:100;min-width:180px;text-align:center;">
+      <div style="font-size:11px;color:#666;font-weight:700;margin-bottom:8px;">PIN pour le téléphone</div>
+      <div id="pin-display-topbar" style="font-size:40px;font-weight:800;letter-spacing:8px;color:#14140F;"></div>
+      <div style="font-size:10px;color:#999;margin-top:6px;">Valable 5 minutes</div>
+      <button onclick="document.getElementById('pin-overlay').style.display='none'" style="margin-top:10px;padding:6px 16px;background:#eee;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:700;">Fermer</button>
     </div>
   </div>
 
@@ -1195,19 +1205,25 @@ function sendSessionToMobile() {
   if (!saved) { showToast('Aucune session', 'red'); return; }
   const pin = String(Math.floor(1000 + Math.random() * 9000));
   const topic = 'novogarden/session/' + pin;
-  document.getElementById('pin-display').textContent = pin;
-  document.getElementById('send-pin').style.display = 'block';
-  showToast('En attente du téléphone…', 'blue');
-  // Publier la session chiffrée sur HiveMQ, topic = PIN
+  // Affiche dans la topbar overlay
+  const overlay = document.getElementById('pin-overlay');
+  const display = document.getElementById('pin-display-topbar');
+  if (display) display.textContent = pin;
+  if (overlay) overlay.style.display = 'block';
+  // Aussi dans l'écran login si visible
+  const loginDisplay = document.getElementById('pin-display');
+  const sendPin = document.getElementById('send-pin');
+  if (loginDisplay) loginDisplay.textContent = pin;
+  if (sendPin) sendPin.style.display = 'block';
   const mqttClient = mqtt.connect(CONFIG.RELAY_BROKER, { clientId: 'ng-send-' + Math.random().toString(16).slice(2,8), clean: true });
   mqttClient.on('connect', () => {
     mqttClient.publish(topic, btoa(saved), { retain: true, qos: 1 });
-    showToast('Session prête — entre le PIN sur le téléphone', 'green');
-    // Nettoyer après 5 minutes
+    showToast('PIN ' + pin + ' — entre-le sur le téléphone', 'green');
     _pinSendTimer = setTimeout(() => {
-      mqttClient.publish(topic, '', { retain: true, qos: 1 }); // effacer
+      mqttClient.publish(topic, '', { retain: true, qos: 1 });
       mqttClient.end();
-      document.getElementById('send-pin').style.display = 'none';
+      if (overlay) overlay.style.display = 'none';
+      if (sendPin) sendPin.style.display = 'none';
     }, 300000);
   });
 }
