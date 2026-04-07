@@ -1602,8 +1602,15 @@ async function connectMqtt() {
       console.log('[MQTT] close (client actif) at', ts);
       _mqttConnecting = false;
       STATE.mqttConnected = false;
-      updateMqttStatus('', 'Déconnecté');
-      updateRobotStatus('offline');
+      updateMqttStatus('', 'Reconnexion…');
+      // Reconnexion automatique avec nouveaux credentials (URL SigV4 expire)
+      setTimeout(async () => {
+        if (STATE.authenticated && STATE.mqttClient === client) {
+          console.log('[MQTT] reconnexion automatique…');
+          STATE.awsCredentials = await getAwsCredentials();
+          if (STATE.awsCredentials) await connectMqtt();
+        }
+      }, 3000);
     });
 
     client.on('offline', () => {
