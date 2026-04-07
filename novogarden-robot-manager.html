@@ -1518,7 +1518,7 @@ async function connectMqtt() {
     const client = mqtt.connect(url, {
       clientId: clientId,
       protocolId: 'MQTT', protocolVersion: 4,
-      clean: true, reconnectPeriod: 0, keepalive: 30,
+      clean: true, reconnectPeriod: 0, keepalive: 300,
     });
     STATE.mqttClient = client;
 
@@ -1574,29 +1574,26 @@ async function connectMqtt() {
   }
 }
 
-// Décodeur protobuf wire-format minimal (sans .proto schema)
-function decodeProtobuf(bytes) {
+// Décodeur protobuf wire-format minimal — récursif sur les sous-messages
+function decodeProtobuf(bytes, depth) {
+  depth = depth || 0;
   const result = {};
   let pos = 0;
   function readVarint() {
-    let val = 0, shift = 0;
+    let lo = 0, hi = 0, shift = 0;
     while (pos < bytes.length) {
       const b = bytes[pos++];
-      val |= (b & 0x7f) << shift;
-      if (shift > 28) { // éviter overflow JS 32-bit
-        // lire le reste sans stocker (varint long)
-        while (pos < bytes.length && (bytes[pos++] & 0x80));
-        return val;
-      }
+      if (shift < 28) { lo |= (b & 0x7f) << shift; }
+      else if (shift < 35) { hi |= (b & 0x7f) << (shift - 28); lo |= (b & 0x7f) << shift; }
       shift += 7;
       if (!(b & 0x80)) break;
     }
-    return val;
+    return lo >>> 0; // retourne uint32 bas
   }
   while (pos < bytes.length) {
     const startPos = pos;
     const tag = readVarint();
-    if (tag === 0 && pos === startPos + 1) break; // padding zéro
+    if (tag === 0 && pos === startPos + 1) break;
     const fieldNum = tag >>> 3;
     const wireType = tag & 0x7;
     const key = 'f' + fieldNum;
@@ -1604,20 +1601,43 @@ function decodeProtobuf(bytes) {
       if (wireType === 0) {
         const v = readVarint();
         result[key] = result[key] !== undefined ? [].concat(result[key], v) : v;
+      } else if (wireType === 1) {
+        // 64-bit little-endian → lire les 8 bytes
+        if (pos + 8 <= bytes.length) {
+          const lo = bytes[pos]|(bytes[pos+1]<<8)|(bytes[pos+2]<<16)|(bytes[pos+3]<<24);
+          pos += 8;
+          result[key] = lo >>> 0;
+        } else { pos = bytes.length; }
+      } else if (wireType === 5) {
+        // 32-bit float little-endian
+        if (pos + 4 <= bytes.length) {
+          const buf = bytes.slice(pos, pos+4);
+          pos += 4;
+          const view = new DataView(buf.buffer, buf.byteOffset, 4);
+          result[key] = view.getFloat32(0, true);
+        } else { pos = bytes.length; }
       } else if (wireType === 2) {
         const len = readVarint();
+        if (pos + len > bytes.length) break;
         const sub = bytes.slice(pos, pos + len);
         pos += len;
-        // Tenter décodage UTF-8, sinon hex
+        // Essayer sous-message récursif si depth < 3
+        if (depth < 3 && sub.length > 0) {
+          try {
+            const sub_decoded = decodeProtobuf(sub, depth + 1);
+            if (Object.keys(sub_decoded).length > 0) {
+              result[key] = sub_decoded;
+              continue;
+            }
+          } catch(e) {}
+        }
+        // Sinon : UTF-8 ou hex
         try {
-          const str = new TextDecoder('utf-8', {fatal: true}).decode(sub);
-          result[key] = str;
+          result[key] = new TextDecoder('utf-8', {fatal:true}).decode(sub);
         } catch(e) {
           result[key] = Array.from(sub).map(b => b.toString(16).padStart(2,'0')).join('');
         }
-      } else if (wireType === 1) { pos += 8; result[key] = '[64bit]'; }
-      else if (wireType === 5)   { pos += 4; result[key] = '[32bit]'; }
-      else break;
+      } else break;
     } catch(e) { break; }
   }
   return result;
@@ -1729,7 +1749,7 @@ function handleMqttMessage(topic, payload) {
     RELAY.client.publish(CONFIG.RELAY_TOPIC_STATUS, statusMsg);
   }
 
-  addActivity(topic.split('/').pop(), b64);
+  addActivity(topic.split('/').pop(), JSON.stringify(fields).slice(0,80));
 }
 
 /* ============================================================
