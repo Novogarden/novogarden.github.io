@@ -1206,9 +1206,33 @@ function exportSession() {
   });
 }
 
-function importSession() {
+async function importSession() {
   const raw = document.getElementById('import-session-input').value.trim();
   if (!raw) { showToast('Code vide', 'red'); return; }
+
+  // Cas 1 : URL myapp://callback/?code=... → échange OAuth
+  if (raw.startsWith('myapp://') || raw.includes('?code=')) {
+    try {
+      const parsable = raw.replace('myapp://', 'https://app/');
+      const u = new URL(parsable);
+      const code = u.searchParams.get('code') || raw;
+      showToast('Échange du token…', 'blue');
+      const tokens = await exchangeCode(code);
+      if (!tokens || tokens.error) {
+        showToast('Code expiré — refais le login sur PC', 'red');
+        return;
+      }
+      STATE.tokens = tokens;
+      localStorage.setItem('ng_tokens', JSON.stringify(tokens));
+      STATE.authenticated = true;
+      showAppShell();
+      showToast('Connecté ✅', 'green');
+      getAwsCredentials().then(c => { STATE.awsCredentials = c; if (c) connectMqtt(); });
+    } catch(e) { showToast('Erreur: ' + e.message, 'red'); }
+    return;
+  }
+
+  // Cas 2 : code base64 exporté depuis PC
   try {
     const tokens = JSON.parse(atob(raw));
     if (!tokens.refresh_token && !tokens.id_token) throw new Error('invalide');
