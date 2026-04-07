@@ -536,10 +536,13 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
     </div>
   </div>
 
-  <!-- MQTT status bar -->
+  <!-- MQTT + BLE status bar -->
   <div id="mqtt-bar" class="mqtt-bar" style="display:none;">
     <div class="mqtt-dot" id="mqtt-dot"></div>
     <span id="mqtt-status-txt">Déconnecté</span>
+    <button onclick="connectBle()" style="margin-left:auto;background:rgba(255,255,255,0.2);border:none;color:white;font-size:11px;font-weight:700;padding:3px 10px;border-radius:8px;cursor:pointer;">
+      <span id="ble-status">⚫ BLE</span>
+    </button>
   </div>
 
   <!-- ============================================================
@@ -1634,23 +1637,28 @@ function handleMqttMessage(topic, payload) {
 /* ============================================================
    COMMANDES ROBOT
    ============================================================ */
-// Commandes protobuf — format MQTT confirmé via ADB logcat : JSON {"message":"<base64>"}
-// Structure générale : f2=49 (header), f5=type_cmd
-// Canal : l'app officielle utilise BLE pour boutons ET MQTT pour stop/query
+// ============================================================
+// BLE — Web Bluetooth pour envoyer les commandes au robot
+// L'app officielle envoie les commandes via BLE (pas MQTT)
+// MQTT = réception statut seulement
+// ============================================================
+
+// Commandes protobuf capturées via ADB logcat
+// Format BLE : string base64 envoyée en UTF-8 sur la caractéristique write
 const CMD_B64 = {
-  // CONFIRMÉ via MQTT : forceWaiting (Force STOP)
-  // Capturé : "forceWaiting,data:EDEoHA==" → robotStatus WAITING
-  STOP:    'EDEoHA==',          // f2=49, f5=28 — CONFIRMÉ MQTT ✅
-
-  // BLE button toggle (f5=20) — testé via MQTT, à valider :
-  // Dans l'app : WAITING→CLEANING, CLEANING→PAUSE, PAUSE→WAITING ou DOCK
-  START:   'EDEoFDgCSgIoAQ==',  // f2=49,f5=20,f7=2,f9.f5=1 — bouton BLE, test MQTT
-  PAUSE:   'EDEoFDgCSgIoAQ==',  // même bouton toggle
-  DOCK:    'EDEoFDgCSgIoAQ==',  // TODO: capturer la commande DOCK séparément
-
-  // Queries (pour debug)
-  QUERY_MAP:   'EDEoE7oBBAgAIAE=',  // f5=19
+  START:       'EDEoFDgCSgIoAQ==',  // toggle bouton (WAITING→CLEANING)
+  PAUSE:       'EDEoFDgCSgIoAQ==',  // même toggle (CLEANING→PAUSE)
+  STOP:        'EDEoHA==',          // forceWaiting f5=28
+  DOCK:        'EDEoFDgCSgIoAQ==',  // TODO: affiner
+  QUERY_MAP:   'EDEoE7oBBAgAIAE=',
   QUERY_DEBUG: 'EDFKAlgB',
+};
+
+const BLE_STATE = {
+  device: null,
+  server: null,
+  writeChar: null,  // caractéristique d'écriture
+  notifyChar: null, // caractéristique de notification
 };
 
 function b64ToBytes(b64) {
@@ -1660,27 +1668,145 @@ function b64ToBytes(b64) {
   return bytes;
 }
 
-function sendCommand(cmd, params = {}) {
-  if (!STATE.mqttConnected) {
-    showToast('Robot non connecté', 'red');
+// Connexion BLE au robot
+async function connectBle() {
+  if (!navigator.bluetooth) {
+    showToast('Web Bluetooth non supporté — utilise Chrome sur Android', 'red');
     return;
   }
+  try {
+    showToast('Scan BLE...', 'blue');
+    // Accepter tous les services (optionalServices vide) pour scan puis enumération
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'Lymow' }],
+      optionalServices: ['generic_access', 'generic_attribute',
+        // UUIDs courants pour modules BLE série (HM-10, etc.)
+        '0000ffe0-0000-1000-8000-00805f9b34fb',
+        '0000fff0-0000-1000-8000-00805f9b34fb',
+        '0000ff00-0000-1000-8000-00805f9b34fb',
+        '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART
+      ],
+    });
+    BLE_STATE.device = device;
+    device.addEventListener('gattserverdisconnected', onBleDisconnect);
 
+    showToast('Connexion GATT...', 'blue');
+    const server = await device.gatt.connect();
+    BLE_STATE.server = server;
+
+    // Énumérer tous les services pour trouver les caractéristiques write
+    const services = await server.getPrimaryServices();
+    console.log('[BLE] services trouvés:', services.length);
+    let writeChar = null;
+    let notifyChar = null;
+
+    for (const svc of services) {
+      console.log('[BLE] service:', svc.uuid);
+      try {
+        const chars = await svc.getCharacteristics();
+        for (const c of chars) {
+          const props = c.properties;
+          console.log('[BLE]   char:', c.uuid, '| write:', props.write, '| writeWithoutResponse:', props.writeWithoutResponse, '| notify:', props.notify);
+          if ((props.write || props.writeWithoutResponse) && !writeChar) writeChar = c;
+          if (props.notify && !notifyChar) notifyChar = c;
+        }
+      } catch(e) { console.log('[BLE]   erreur chars:', e.message); }
+    }
+
+    if (!writeChar) {
+      showToast('Caractéristique write non trouvée — vois console', 'red');
+      return;
+    }
+
+    BLE_STATE.writeChar = writeChar;
+    BLE_STATE.notifyChar = notifyChar;
+    console.log('[BLE] ✅ write char:', writeChar.uuid);
+
+    if (notifyChar) {
+      await notifyChar.startNotifications();
+      notifyChar.addEventListener('characteristicvaluechanged', onBleNotify);
+      console.log('[BLE] ✅ notify actif');
+    }
+
+    STATE.bleConnected = true;
+    updateBleStatus('connected');
+    showToast('BLE connecté !', 'green');
+  } catch(e) {
+    console.error('[BLE] erreur:', e);
+    showToast('BLE erreur: ' + e.message, 'red');
+    updateBleStatus('error');
+  }
+}
+
+function onBleDisconnect() {
+  console.log('[BLE] déconnecté');
+  STATE.bleConnected = false;
+  BLE_STATE.writeChar = null;
+  BLE_STATE.notifyChar = null;
+  updateBleStatus('disconnected');
+  showToast('BLE déconnecté', 'orange');
+}
+
+function onBleNotify(event) {
+  const value = event.target.value;
+  const bytes = new Uint8Array(value.buffer);
+  const str = new TextDecoder().decode(bytes);
+  console.log('[BLE] notify reçu:', str);
+  // Les messages BLE sont aussi des base64 protobuf
+  try {
+    const pb = decodeProtobuf(Buffer.from ? Buffer.from(str, 'base64') : b64ToBytes(str));
+    console.log('[BLE] notify fields:', JSON.stringify(pb));
+  } catch(e) {}
+}
+
+function updateBleStatus(status) {
+  const el = document.getElementById('ble-status');
+  if (!el) return;
+  const map = { connected: '🔵 BLE', disconnected: '⚫ BLE', error: '🔴 BLE', connecting: '🟡 BLE' };
+  el.textContent = map[status] || status;
+}
+
+// Envoi commande : BLE en priorité, MQTT en fallback (STOP seulement)
+async function sendCommand(cmd, params = {}) {
   const b64 = CMD_B64[cmd];
   if (!b64) {
-    showToast('⏳ Commande ' + cmd + ' pas encore capturée', 'orange');
-    console.warn('[CMD] commande inconnue:', cmd, '— capture ADB nécessaire');
+    showToast('Commande inconnue: ' + cmd, 'orange');
     return;
   }
 
-  // Format confirmé via ADB logcat : JSON {"message":"<base64_protobuf>"}
-  const payload = JSON.stringify({ message: b64 });
-  console.log('[CMD]', cmd, '→ topic:', CONFIG.TOPIC_PUB, '→ payload:', payload);
-  STATE.mqttClient.publish(CONFIG.TOPIC_PUB, payload);
-
   const labels = { START:'Démarrage', STOP:'Arrêt', DOCK:'Retour base', PAUSE:'Pause', EDGE:'Tonte bords', SPOT:'Tonte spot' };
-  showToast(labels[cmd] || cmd, 'green');
-  addActivity(`Commande: ${labels[cmd] || cmd}`, cmd, false);
+
+  // Priorité 1 : BLE
+  if (BLE_STATE.writeChar) {
+    try {
+      // Format BLE : string base64 en UTF-8 (comme l'app officielle)
+      const encoded = new TextEncoder().encode(b64);
+      if (BLE_STATE.writeChar.properties.writeWithoutResponse) {
+        await BLE_STATE.writeChar.writeValueWithoutResponse(encoded);
+      } else {
+        await BLE_STATE.writeChar.writeValueWithResponse(encoded);
+      }
+      console.log('[BLE] cmd envoyée:', cmd, b64);
+      showToast(labels[cmd] || cmd, 'green');
+      addActivity(`Commande BLE: ${labels[cmd] || cmd}`, cmd, false);
+      return;
+    } catch(e) {
+      console.error('[BLE] write error:', e);
+      showToast('BLE write erreur: ' + e.message, 'red');
+    }
+  }
+
+  // Priorité 2 : MQTT (STOP seulement — les autres sont bloquées par la policy)
+  if (STATE.mqttConnected && cmd === 'STOP') {
+    const payload = JSON.stringify({ message: b64 });
+    console.log('[MQTT] cmd:', cmd, payload);
+    STATE.mqttClient.publish(CONFIG.TOPIC_PUB, payload);
+    showToast(labels[cmd] + ' (MQTT)', 'green');
+    addActivity(`Commande MQTT: ${labels[cmd] || cmd}`, cmd, false);
+    return;
+  }
+
+  showToast('Connecte le BLE d\'abord', 'red');
 }
 
 let driveInterval = null;
