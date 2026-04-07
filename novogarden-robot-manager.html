@@ -470,16 +470,23 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         </button>
       </div>
 
-      <!-- Connexion via refresh token (méthode principale) -->
+      <!-- Connexion email + mot de passe Lymow -->
       <div style="margin-bottom:4px;">
         <div style="font-size:11px;font-weight:700;color:var(--grey);margin-bottom:6px;">
-          Token de connexion Lymow
+          Email Lymow
         </div>
-        <textarea id="refresh-token-input" rows="3"
-          placeholder="Colle ici le refresh_token..."
-          style="width:100%;padding:10px 12px;border:2px solid var(--grey-light);border-radius:12px;font-size:11px;font-weight:500;font-family:monospace;color:var(--dark);outline:none;margin-bottom:8px;resize:none;"
-          oninput="this.style.borderColor=this.value?'var(--green)':'var(--grey-light)'"></textarea>
-        <button onclick="loginWithRefreshToken()" style="width:100%;padding:13px;background:var(--dark);color:white;border:none;border-radius:12px;font-size:13px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
+        <input id="login-email" type="email" placeholder="prenom@exemple.com"
+          style="width:100%;padding:12px 14px;border:2px solid var(--grey-light);border-radius:12px;font-size:13px;font-weight:500;font-family:'Montserrat',sans-serif;color:var(--dark);outline:none;margin-bottom:10px;"
+          oninput="this.style.borderColor=this.value?'var(--green)':'var(--grey-light)'"
+          onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
+        <div style="font-size:11px;font-weight:700;color:var(--grey);margin-bottom:6px;">
+          Mot de passe
+        </div>
+        <input id="login-password" type="password" placeholder="••••••••"
+          style="width:100%;padding:12px 14px;border:2px solid var(--grey-light);border-radius:12px;font-size:13px;font-weight:500;font-family:'Montserrat',sans-serif;color:var(--dark);outline:none;margin-bottom:12px;"
+          oninput="this.style.borderColor=this.value?'var(--green)':'var(--grey-light)'"
+          onkeydown="if(event.key==='Enter')loginWithPassword()">
+        <button onclick="loginWithPassword()" id="login-btn" style="width:100%;padding:13px;background:var(--dark);color:white;border:none;border-radius:12px;font-size:13px;font-weight:700;font-family:'Montserrat',sans-serif;cursor:pointer;">
           Se connecter
         </button>
       </div>
@@ -1162,18 +1169,48 @@ async function generateCodeChallenge(verifier) {
   return btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
 }
 
-async function loginWithRefreshToken() {
-  const rt = document.getElementById('refresh-token-input').value.trim();
-  if (!rt || rt.length < 20) { showToast('Token invalide', 'red'); return; }
-  STATE.tokens = { refresh_token: rt };
-  localStorage.setItem('ng_tokens', JSON.stringify(STATE.tokens));
-  showToast('Connexion…', 'blue');
-  const ok = await refreshTokens();
-  if (!ok) { showToast('Token refusé — reconnecte-toi dans l\'app Lymow', 'red'); return; }
-  STATE.authenticated = true;
-  showAppShell();
-  STATE.awsCredentials = await getAwsCredentials();
-  if (STATE.awsCredentials) await connectMqtt();
+function loginWithPassword() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) { showToast('Email et mot de passe requis', 'red'); return; }
+
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true;
+  btn.textContent = 'Connexion…';
+  showToast('Connexion en cours…', 'blue');
+
+  const poolData = { UserPoolId: CONFIG.USER_POOL_ID, ClientId: CONFIG.CLIENT_ID };
+  const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+  const cognitoUser = new AmazonCognitoIdentity.CognitoUser({ Username: email, Pool: userPool });
+  const authDetails = new AmazonCognitoIdentity.AuthenticationDetails({ Username: email, Password: password });
+
+  cognitoUser.authenticateUser(authDetails, {
+    onSuccess(result) {
+      btn.disabled = false; btn.textContent = 'Se connecter';
+      STATE.tokens = {
+        id_token:      result.getIdToken().getJwtToken(),
+        access_token:  result.getAccessToken().getJwtToken(),
+        refresh_token: result.getRefreshToken().getToken(),
+      };
+      localStorage.setItem('ng_tokens', JSON.stringify(STATE.tokens));
+      STATE.authenticated = true;
+      showAppShell();
+      showToast('Connecté ✅', 'green');
+      getAwsCredentials().then(creds => {
+        STATE.awsCredentials = creds;
+        if (creds) connectMqtt();
+      });
+    },
+    onFailure(err) {
+      btn.disabled = false; btn.textContent = 'Se connecter';
+      const msg = err.message || String(err);
+      showToast('Erreur : ' + msg, 'red');
+    },
+    newPasswordRequired() {
+      btn.disabled = false; btn.textContent = 'Se connecter';
+      showToast('Nouveau mot de passe requis — change-le dans l\'app Lymow', 'orange');
+    },
+  });
 }
 
 async function loginWithCallbackUrl() {
