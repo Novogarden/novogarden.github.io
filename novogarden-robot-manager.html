@@ -1870,38 +1870,28 @@ function handleMqttMessage(topic, payload) {
   const fields = decodeProtobuf(protoBytes);
   console.log('[MQTT]   protobuf fields:', JSON.stringify(fields));
 
-  // ═══ SCANNER GPS NORMANDIE ═══════════════════════════════════════════
-  // Cherche dans les bytes bruts les patterns float64 proches de lat~49, lng~-1..1
-  // ET scanne récursivement tous les champs pour trouver des valeurs GPS-like
+  // ═══ SCANNER GPS ═══════════════════════════════════════════════════════
   (function scanGps() {
-    // 1. Scan raw bytes pour float64 (wireType=1) dans plage GPS France
     const dv = new DataView(protoBytes.buffer, protoBytes.byteOffset, protoBytes.byteLength);
-    const gpsHits = [];
-    for (let i = 0; i <= protoBytes.length - 8; i++) {
-      const v = dv.getFloat64(i, true); // little-endian
-      if (isFinite(v) && !isNaN(v)) {
-        if ((v >= 42 && v <= 52) || (v >= -5 && v <= 10)) { // plage France
-          // Remonter pour trouver le tag protobuf (cherche tag 1-2 octets avant)
-          let tagByte = i > 0 ? protoBytes[i-1] : -1;
-          let fieldNum = tagByte >>> 3;
-          let wireType = tagByte & 0x7;
-          gpsHits.push({ offset: i, value: v, possibleField: (wireType===1 ? 'f'+fieldNum : '?'), hex: Array.from(protoBytes.slice(i,i+8)).map(b=>b.toString(16).padStart(2,'0')).join(' ') });
-        }
-      }
-    }
-    if (gpsHits.length > 0) {
-      console.warn('🌍 [GPS-SCAN] Valeurs float64 plage France trouvées dans proto brut:', JSON.stringify(gpsHits));
-    }
 
-    // 2. Scan récursif de tous les champs décodés
+    // Scan récursif de tous les champs décodés — cherche 4 formats GPS possibles
     function scanFields(obj, path) {
       if (!obj || typeof obj !== 'object') return;
       for (const [k, v] of Object.entries(obj)) {
-        const p = path ? path + '.' + k : k;
+        const p = path ? path+'.'+k : k;
         if (typeof v === 'number' && isFinite(v)) {
-          if ((v >= 42 && v <= 52) || (v >= -5 && v <= 10)) {
-            console.warn(`🌍 [GPS-SCAN] Champ ${p} = ${v} → possible GPS France`);
-          }
+          // Format 1 : double/float (42..52 lat, -6..10 lng)
+          if ((v >= 42 && v <= 52) || (v >= -6 && v <= 10))
+            console.warn(`🌍 [GPS] ${p}=${v} → float France (lat ou lng)`);
+          // Format 2 : E7 (degrés × 1e7) → France lat 420000000..520000000, lng -60000000..100000000
+          if ((v >= 420000000 && v <= 520000000) || (v >= -60000000 && v <= 100000000))
+            console.warn(`🌍 [GPS-E7] ${p}=${v} → ${(v/1e7).toFixed(6)}° (E7)`);
+          // Format 3 : E6 (degrés × 1e6)
+          if ((v >= 42000000 && v <= 52000000) || (v >= -6000000 && v <= 10000000))
+            console.warn(`🌍 [GPS-E6] ${p}=${v} → ${(v/1e6).toFixed(6)}° (E6)`);
+          // Format 4 : E5
+          if ((v >= 4200000 && v <= 5200000) || (v >= -600000 && v <= 1000000))
+            console.warn(`🌍 [GPS-E5] ${p}=${v} → ${(v/1e5).toFixed(6)}° (E5)`);
         } else if (typeof v === 'object' && v !== null) {
           scanFields(v, p);
         }
@@ -1909,19 +1899,38 @@ function handleMqttMessage(topic, payload) {
     }
     scanFields(fields, '');
 
-    // 3. Log TOUS les float64 (wireType=1) trouvés dans le message brut
-    const allDoubles = [];
-    for (let i = 0; i <= protoBytes.length - 8; i++) {
+    // Scan raw bytes float64 plage France
+    for (let i = 0; i <= protoBytes.length-8; i++) {
       const v = dv.getFloat64(i, true);
-      if (isFinite(v) && !isNaN(v) && Math.abs(v) > 0.001 && Math.abs(v) < 1e9) {
-        let tagByte = i > 0 ? protoBytes[i-1] : -1;
-        let wt = tagByte & 0x7;
-        if (wt === 1) allDoubles.push({ off: i, v: v.toFixed(8), f: 'f'+(tagByte>>>3) });
+      if (isFinite(v) && !isNaN(v) && ((v>=42&&v<=52)||(v>=-6&&v<=10))) {
+        let tb = i>0?protoBytes[i-1]:-1, wt=tb&7, fn=tb>>>3;
+        console.warn(`🌍 [GPS-RAW64] off=${i} val=${v.toFixed(8)} → ${wt===1?'f'+fn:'?'} hex=${Array.from(protoBytes.slice(i,i+8)).map(b=>b.toString(16).padStart(2,'0')).join(' ')}`);
       }
     }
-    if (allDoubles.length) console.log('📐 [DOUBLES] Tous les float64 du message:', JSON.stringify(allDoubles));
+
+    // Log complet : tous les float64 wireType=1 du message brut
+    const doubles = [];
+    for (let i = 0; i <= protoBytes.length-8; i++) {
+      const v = dv.getFloat64(i, true);
+      let tb = i>0?protoBytes[i-1]:-1, wt=tb&7;
+      if (wt===1 && isFinite(v) && !isNaN(v) && Math.abs(v)>0.0001 && Math.abs(v)<1e10)
+        doubles.push(`f${tb>>>3}=${v.toFixed(6)}`);
+    }
+    if (doubles.length) console.log('📐 [ALL-F64]', doubles.join(' | '));
+
+    // Log complet : tous les entiers > 1M qui pourraient être des coords E7
+    function logBigInts(obj, path) {
+      if (!obj || typeof obj !== 'object') return;
+      for (const [k,v] of Object.entries(obj)) {
+        const p = path?path+'.'+k:k;
+        if (typeof v==='number' && Number.isInteger(v) && Math.abs(v)>1000000)
+          console.log(`🔢 [BIGINT] ${p}=${v}`);
+        else if (typeof v==='object' && v!==null) logBigInts(v,p);
+      }
+    }
+    logBigInts(fields, '');
   })();
-  // ═════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════
 
   // Mapping confirmé via ADB logcat (---✅-💖-状态更新---robotStatus: N)
   const STATUS_MAP = {
