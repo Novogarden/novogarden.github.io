@@ -1933,10 +1933,19 @@ function handleMqttMessage(topic, payload) {
     handleRobotZoneData(fields.f23);
   }
 
-  // En mode gateway : relayer le statut au PC via HiveMQ
-  if (RELAY.mode === 'gateway' && RELAY.connected && (robotStatus || battery != null)) {
-    const statusMsg = JSON.stringify({ status: robotStatus, battery });
-    RELAY.client.publish(CONFIG.RELAY_TOPIC_STATUS, statusMsg);
+  // En mode gateway : relayer statut + position locale au PC via HiveMQ
+  if (RELAY.mode === 'gateway' && RELAY.connected) {
+    const relayMsg = {};
+    if (robotStatus) relayMsg.status = robotStatus;
+    if (battery != null) relayMsg.battery = battery;
+    if (STATE.robotLocalPos) {
+      relayMsg.x = STATE.robotLocalPos.x;
+      relayMsg.y = STATE.robotLocalPos.y;
+      if (STATE.robotHeading != null) relayMsg.hdg = STATE.robotHeading;
+    }
+    if (Object.keys(relayMsg).length > 0) {
+      RELAY.client.publish(CONFIG.RELAY_TOPIC_STATUS, JSON.stringify(relayMsg));
+    }
   }
 
   addActivity(topic.split('/').pop(), JSON.stringify(fields).slice(0,80));
@@ -2248,11 +2257,20 @@ function connectRelay() {
       console.log('[RELAY] commande reçue:', msg);
       executeBleCommand(msg);
     } else if (RELAY.mode === 'remote' && topic === CONFIG.RELAY_TOPIC_STATUS) {
-      // PC reçoit un statut du téléphone → mettre à jour l'UI
+      // PC reçoit un statut du téléphone → mettre à jour l'UI + position
       try {
         const s = JSON.parse(msg);
         if (s.status)  updateRobotStatus(s.status);
         if (s.battery != null) updateBattery(s.battery);
+        // Position locale relayée depuis le téléphone (f14.f1/f14.f2)
+        if (typeof s.x === 'number' && typeof s.y === 'number') {
+          STATE.robotLocalPos = { x: s.x, y: s.y };
+          if (typeof s.hdg === 'number') STATE.robotHeading = s.hdg;
+          console.log(`[RELAY-POS] x=${s.x.toFixed(2)}m y=${s.y.toFixed(2)}m`);
+          updateRobotFromLocalCoords(s.x, s.y);
+          const rtk = document.getElementById('rtk-txt');
+          if (rtk) rtk.textContent = `Local x=${s.x.toFixed(2)}m y=${s.y.toFixed(2)}m`;
+        }
       } catch(e) {}
     }
   });
@@ -2899,8 +2917,11 @@ function initMap() {
     return;
   }
   _map = L.map('leaflet-map', { zoomControl:false, attributionControl:false });
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    maxZoom:22, attribution:'© Esri Satellite'
+  // Tuiles Google Satellite (meilleure couverture et zoom)
+  L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+    subdomains: ['mt0','mt1','mt2','mt3'],
+    maxZoom: 22,
+    attribution: '© Google Satellite'
   }).addTo(_map);
   L.control.zoom({ position:'bottomright' }).addTo(_map);
   L.control.attribution({ position:'bottomleft', prefix:'' }).addTo(_map);
