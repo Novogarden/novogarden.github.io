@@ -845,8 +845,12 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         <button class="map-tool-btn" id="btn-follow-robot" title="Suivre le robot (centrage auto)" onclick="toggleFollowRobot()" style="background:#e8f5e9;">
           <svg viewBox="0 0 24 24" style="fill:var(--green)"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06z"/></svg>
         </button>
-        <!-- Calibration GPS -->
-        <button class="map-tool-btn" id="tool-calibrate" title="Calibrer position robot (📍 cliquer où est le robot)" onclick="startMapCalibration()" style="background:#fff3cd;">
+        <!-- Calibration GPS automatique (téléphone à côté du robot) -->
+        <button class="map-tool-btn" id="tool-calibrate-auto" title="Je suis à côté du robot — utiliser mon GPS" onclick="calibrateWithPhoneGps()" style="background:#e3f2fd;">
+          <svg viewBox="0 0 24 24" style="fill:#1565c0"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06z"/></svg>
+        </button>
+        <!-- Calibration manuelle (clic sur carte) -->
+        <button class="map-tool-btn" id="tool-calibrate" title="Calibration manuelle — cliquer sur la carte" onclick="startMapCalibration()" style="background:#fff3cd;">
           <svg viewBox="0 0 24 24" style="fill:#856404"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
         </button>
         <!-- Goto point-and-click -->
@@ -3051,7 +3055,37 @@ function updateRobotFromLocalCoords(x, y) {
   if (gps) updateRobotMarker(gps.lat, gps.lng);
 }
 
-// Calibration : l'utilisateur clique sur la carte à l'endroit du robot
+// Calibration automatique via GPS du téléphone (méthode principale)
+function calibrateWithPhoneGps() {
+  if (!navigator.geolocation) {
+    showToast('GPS non disponible — utilise la calibration manuelle (📍)', 'red');
+    return;
+  }
+  showToast('📡 Acquisition GPS téléphone…', 'blue');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const acc = pos.coords.accuracy;
+      const robotPos = STATE.robotLocalPos || {x: 0, y: 0};
+      STATE.mapCalib = { refLat: lat, refLng: lng, localX: robotPos.x, localY: robotPos.y };
+      localStorage.setItem('ng_mapcalib', JSON.stringify(STATE.mapCalib));
+      showToast(`✅ Calibré ! Précision GPS: ±${acc.toFixed(0)}m`, acc < 10 ? 'green' : 'orange');
+      // Centrer la carte sur la position obtenue
+      if (_map) _map.setView([lat, lng], 19);
+      // Ré-afficher robot et zone
+      if (STATE.robotLocalPos) updateRobotFromLocalCoords(STATE.robotLocalPos.x, STATE.robotLocalPos.y);
+      if (STATE.robotZone) displayRobotZoneLocal(STATE.robotZone);
+      _userMovedMap = false;
+    },
+    (err) => {
+      showToast('GPS refusé: ' + err.message + ' — utilise la calibration manuelle (📍)', 'red');
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+// Calibration manuelle : l'utilisateur clique sur la carte à l'endroit du robot
 function startMapCalibration() {
   if (!STATE.robotLocalPos) {
     showToast('En attente de la position robot (f12)…', 'orange');
@@ -3059,7 +3093,7 @@ function startMapCalibration() {
   }
   _mapTool = 'calibrate';
   const hint = document.getElementById('map-hint');
-  hint.textContent = '📍 Cliquez ici sur la carte — là où se trouve le robot maintenant';
+  hint.textContent = '📍 Cliquez sur la carte à l\'endroit exact du robot';
   hint.classList.add('show');
   showToast('Cliquez sur la carte à la position du robot', 'blue');
 }
