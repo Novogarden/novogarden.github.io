@@ -2169,16 +2169,40 @@ function connectRelay() {
       client.subscribe(CONFIG.RELAY_TOPIC_CMD, err => {
         if (!err) console.log('[RELAY] gateway — abonné CMD');
       });
+      // Publier la calibration avec retain=true → PC la reçoit automatiquement
+      const calib = localStorage.getItem('ng_mapcalib');
+      if (calib) {
+        client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', calib, { retain: true, qos: 1 });
+        console.log('[RELAY] calibration publiée vers PC');
+      }
     } else {
-      // PC : écoute le statut envoyé par le téléphone
+      // PC : écoute le statut + calibration envoyés par le téléphone
       client.subscribe(CONFIG.RELAY_TOPIC_STATUS, err => {
         if (!err) console.log('[RELAY] remote — abonné STATUS');
+      });
+      client.subscribe('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', err => {
+        if (!err) console.log('[RELAY] remote — abonné CALIB');
       });
     }
   });
 
   client.on('message', (topic, payload) => {
     const msg = payload.toString();
+    // Réception calibration sur PC (retain → immédiat à la connexion)
+    if (topic === 'novogarden/' + CONFIG.ROBOT_SERIAL + '/calib') {
+      try {
+        const calib = JSON.parse(msg);
+        if (calib.refLat && calib.refLng) {
+          STATE.mapCalib = calib;
+          localStorage.setItem('ng_mapcalib', msg);
+          showToast('📍 Calibration reçue du téléphone ✅', 'green');
+          if (STATE.robotLocalPos) updateRobotFromLocalCoords(STATE.robotLocalPos.x, STATE.robotLocalPos.y);
+          if (STATE.robotZone) displayRobotZoneLocal(STATE.robotZone);
+          if (_map && STATE.robotGPS) { _userMovedMap = false; _map.setView([STATE.robotGPS.lat, STATE.robotGPS.lng], 19); }
+        }
+      } catch(e) {}
+      return;
+    }
     if (RELAY.mode === 'gateway' && topic === CONFIG.RELAY_TOPIC_CMD) {
       // Téléphone reçoit une commande du PC → l'exécuter en BLE
       console.log('[RELAY] commande reçue:', msg);
@@ -3069,7 +3093,10 @@ function calibrateWithPhoneGps() {
       const acc = pos.coords.accuracy;
       const robotPos = STATE.robotLocalPos || {x: 0, y: 0};
       STATE.mapCalib = { refLat: lat, refLng: lng, localX: robotPos.x, localY: robotPos.y };
-      localStorage.setItem('ng_mapcalib', JSON.stringify(STATE.mapCalib));
+      const calibJson = JSON.stringify(STATE.mapCalib);
+      localStorage.setItem('ng_mapcalib', calibJson);
+      // Sync vers le PC via HiveMQ
+      if (RELAY.connected && RELAY.client) RELAY.client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', calibJson, { retain: true, qos: 1 });
       showToast(`✅ Calibré ! Précision GPS: ±${acc.toFixed(0)}m`, acc < 10 ? 'green' : 'orange');
       // Centrer la carte sur la position obtenue
       if (_map) _map.setView([lat, lng], 19);
@@ -3224,7 +3251,9 @@ function startAdjustCalib() {
     // Recalculer la calibration : ce point GPS = position locale actuelle du robot
     const pos = STATE.robotLocalPos || {x:0, y:0};
     STATE.mapCalib = { refLat:lat, refLng:lng, localX:pos.x, localY:pos.y };
-    localStorage.setItem('ng_mapcalib', JSON.stringify(STATE.mapCalib));
+    const calibJson = JSON.stringify(STATE.mapCalib);
+    localStorage.setItem('ng_mapcalib', calibJson);
+    if (RELAY.connected && RELAY.client) RELAY.client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', calibJson, { retain: true, qos: 1 });
     showToast('📍 Position ajustée — clique ✅ pour confirmer', 'orange');
   });
 
