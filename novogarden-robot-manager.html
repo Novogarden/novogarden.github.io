@@ -1831,11 +1831,11 @@ function handleMqttMessage(topic, payload) {
 
   // Mapping confirmé via ADB logcat (---✅-💖-状态更新---robotStatus: N)
   const STATUS_MAP = {
-    1: 'waiting',   // ROBOT_STATUS_WAITING
-    2: 'mowing',    // ROBOT_STATUS_CLEANING
-    3: 'paused',    // ROBOT_STATUS_PAUSE (d'après transitions CLEANING→3→CLEANING)
-    4: 'docking',   // ROBOT_STATUS_DOCKING
-    5: 'charging',  // ROBOT_STATUS_CHARGING
+    1: 'waiting',   // ROBOT_STATUS_WAITING ✅ confirmé
+    2: 'mowing',    // ROBOT_STATUS_CLEANING ✅ confirmé (f5=2 → robot tond)
+    3: 'paused',    // ROBOT_STATUS_PAUSE
+    4: 'docking',   // ROBOT_STATUS_DOCKING ✅ confirmé (f5=4 → robot rentre)
+    5: 'charging',  // ROBOT_STATUS_CHARGING ✅ confirmé
     6: 'emergency', // ROBOT_STATUS_EMERGENCY_STOP
   };
   let robotStatus = null, battery = null;
@@ -1895,10 +1895,10 @@ function handleMqttMessage(topic, payload) {
 // Commandes BLE — bytes binaires protobuf (f2=49, f5=code)
 // Pattern: 10 31 28 XX  où XX = code action
 const CMD_B64 = {
-  START:       'EDEoBA==',          // f5=4 → démarre la tonte ✅ confirmé
+  START:       'EDEoAg==',          // f5=2 → tonte ✅ confirmé (f1→2)
   PAUSE:       'EDEoAw==',          // f5=3 → pause (à confirmer)
   STOP:        'EDEoHA==',          // f5=28 → forceWaiting (testé)
-  DOCK:        'EDEoAg==',          // f5=2 → retour base ✅ confirmé
+  DOCK:        'EDEoBA==',          // f5=4 → retour base ✅ confirmé (f1→4)
   QUERY_MAP:   'EDEoE7oBBAgAIAE=', // handshake/keepalive (confirmé)
   QUERY_DEBUG: 'EDFKAlgB',
   // Candidats alternatifs START si f5=2 ne marche pas :
