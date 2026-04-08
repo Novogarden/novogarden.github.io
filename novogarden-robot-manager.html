@@ -842,8 +842,8 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         <button class="map-tool-btn danger-tool" title="Effacer sélection" onclick="clearLastShape()">
           <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm2.46-7.12l1.41-1.41L12 12.59l2.12-2.12 1.41 1.41L13.41 14l2.12 2.12-1.41 1.41L12 15.41l-2.12 2.12-1.41-1.41L10.59 14l-2.13-2.12zM15.5 4l-1-1h-5l-1 1H5v2h14V4z"/></svg>
         </button>
-        <button class="map-tool-btn" title="Centrer sur robot" onclick="centerOnRobot()">
-          <svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06z"/></svg>
+        <button class="map-tool-btn" id="btn-follow-robot" title="Suivre le robot (centrage auto)" onclick="toggleFollowRobot()" style="background:#e8f5e9;">
+          <svg viewBox="0 0 24 24" style="fill:var(--green)"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06z"/></svg>
         </button>
         <!-- Calibration GPS -->
         <button class="map-tool-btn" id="tool-calibrate" title="Calibrer position robot (📍 cliquer où est le robot)" onclick="startMapCalibration()" style="background:#fff3cd;">
@@ -2808,12 +2808,14 @@ let _currentTerrainId = '';
 let _drawPoints = [];
 let _drawLayer = null;
 let _layers = { perimeters:[], obstacles:[], corridors:[], rows:[], robotMarker:null, rtkMarker:null, robotZone:null, gotoMarker:null };
+let _userMovedMap = false;   // true si l'utilisateur a bougé la carte manuellement
+let _recenterTimer = null;   // reprend l'auto-centrage après 5s
 
 function initMap() {
   if (_map) { setTimeout(()=>_map.invalidateSize(),200); refreshMapLayers(); return; }
   _map = L.map('leaflet-map', { zoomControl:false, attributionControl:false });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom:22, attribution:'© OSM'
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom:22, attribution:'© Esri Satellite'
   }).addTo(_map);
   L.control.zoom({ position:'bottomright' }).addTo(_map);
   L.control.attribution({ position:'bottomleft', prefix:'' }).addTo(_map);
@@ -2828,6 +2830,11 @@ function initMap() {
   }
 
   _map.on('click', onMapClick);
+  _map.on('dragstart', () => {
+    _userMovedMap = true;
+    if (_recenterTimer) clearTimeout(_recenterTimer);
+    _recenterTimer = setTimeout(() => { _userMovedMap = false; }, 8000);
+  });
   _map.on('moveend', ()=>{
     const c = _map.getCenter();
     localStorage.setItem('ng_map_center', JSON.stringify([c.lat, c.lng, _map.getZoom()]));
@@ -2984,10 +2991,23 @@ function updateRowWidth(val) {
 
 function centerOnRobot() {
   if (STATE.robotGPS) {
-    _map.setView([STATE.robotGPS.lat, STATE.robotGPS.lng], 18);
+    _userMovedMap = false;
+    _map.setView([STATE.robotGPS.lat, STATE.robotGPS.lng], 19);
   } else {
-    showToast('Position GPS robot inconnue', 'red');
+    showToast('Position GPS robot inconnue — calibre la carte d\'abord (📍)', 'orange');
   }
+}
+
+function toggleFollowRobot() {
+  _userMovedMap = false;
+  if (_recenterTimer) clearTimeout(_recenterTimer);
+  centerOnRobot();
+  showToast('🔒 Centrage auto actif', 'green');
+  const btn = document.getElementById('btn-follow-robot');
+  if (btn) { btn.style.background = '#7DB532'; btn.querySelector('svg').style.fill = 'white'; }
+  setTimeout(() => {
+    if (btn) { btn.style.background = '#e8f5e9'; btn.querySelector('svg').style.fill = 'var(--green)'; }
+  }, 2000);
 }
 
 function saveMapData() {
@@ -3131,16 +3151,20 @@ function updateMapTerrainChips() {
   sel.innerHTML = `<div class="map-terrain-chip active" data-tid="" onclick="selectMapTerrain(this,'')">Général</div>` + extras;
 }
 
-// Afficher position robot sur la carte
+// Afficher position robot sur la carte + centrage automatique
 function updateRobotMarker(lat, lng) {
   STATE.robotGPS = {lat, lng};
   if (!_map) return;
   const icon = L.divIcon({
-    html:`<div style="width:18px;height:18px;background:#7DB532;border:3px solid white;border-radius:50%;box-shadow:0 0 8px rgba(125,181,50,0.8);"></div>`,
-    iconSize:[18,18], iconAnchor:[9,9], className:''
+    html:`<div style="width:20px;height:20px;background:#7DB532;border:3px solid white;border-radius:50%;box-shadow:0 0 10px rgba(125,181,50,0.9);"></div>`,
+    iconSize:[20,20], iconAnchor:[10,10], className:''
   });
   if (_layers.robotMarker) _map.removeLayer(_layers.robotMarker);
-  _layers.robotMarker = L.marker([lat,lng], {icon, zIndexOffset:1000}).bindPopup('Robot').addTo(_map);
+  _layers.robotMarker = L.marker([lat,lng], {icon, zIndexOffset:1000}).bindPopup('🤖 Robot').addTo(_map);
+  // Centrage automatique — uniquement si l'écran carte est actif et que l'utilisateur ne fait pas glisser
+  if (!_userMovedMap) {
+    _map.setView([lat, lng], _map.getZoom() < 18 ? 19 : _map.getZoom());
+  }
 }
 
 /* ============================================================
