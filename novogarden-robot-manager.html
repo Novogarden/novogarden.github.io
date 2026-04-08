@@ -2860,13 +2860,19 @@ function initMap() {
   L.control.zoom({ position:'bottomright' }).addTo(_map);
   L.control.attribution({ position:'bottomleft', prefix:'' }).addTo(_map);
 
-  // Centrage initial : France par défaut ou dernière position
-  const lastPos = localStorage.getItem('ng_map_center');
-  if (lastPos) {
-    const [lat,lng,z] = JSON.parse(lastPos);
-    _map.setView([lat,lng], z);
+  // Centrage initial : calibration > dernière position > France par défaut
+  const calib = STATE.mapCalib || JSON.parse(localStorage.getItem('ng_mapcalib') || 'null');
+  if (calib && calib.refLat) {
+    _map.setView([calib.refLat, calib.refLng], 19);
+    if (calib) { STATE.mapCalib = calib; }
   } else {
-    _map.setView([46.5,2.5], 6);
+    const lastPos = localStorage.getItem('ng_map_center');
+    if (lastPos) {
+      const [lat,lng,z] = JSON.parse(lastPos);
+      _map.setView([lat,lng], z);
+    } else {
+      _map.setView([46.5,2.5], 6);
+    }
   }
 
   _map.on('click', onMapClick);
