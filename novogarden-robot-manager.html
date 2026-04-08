@@ -2201,9 +2201,13 @@ function connectRelay() {
             STATE.mapCalib = calib;
             localStorage.setItem('ng_mapcalib', msg);
             showToast('📍 Calibration synchronisée ✅', 'green');
+            // Naviguer directement vers le point de référence (refLat/refLng = position robot au moment de la calibration)
+            if (_map) {
+              _userMovedMap = false;
+              _map.setView([calib.refLat, calib.refLng], 19);
+            }
             if (STATE.robotLocalPos) updateRobotFromLocalCoords(STATE.robotLocalPos.x, STATE.robotLocalPos.y);
             if (STATE.robotZone) displayRobotZoneLocal(STATE.robotZone);
-            if (_map && STATE.robotGPS) { _userMovedMap = false; _map.setView([STATE.robotGPS.lat, STATE.robotGPS.lng], 19); }
           } else {
             console.log('[RELAY] calib reçue ignorée — on est gateway avec calibration locale');
           }
