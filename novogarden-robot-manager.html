@@ -658,7 +658,10 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
           </button>
         </div>
 
-        <div class="section-title">Activité récente</div>
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+          Activité récente
+          <button onclick="copyActivityLogs()" style="font-size:10px;font-weight:700;background:var(--green);color:white;border:none;border-radius:8px;padding:3px 10px;cursor:pointer;">📋 Copier</button>
+        </div>
         <div id="activity-feed">
           <div class="empty-state" style="padding:20px 0;">
             <svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8z"/></svg>
@@ -2267,6 +2270,15 @@ function updateDashStats() {
   const m = STATE.dailyStats.duration % 60;
   document.getElementById('stat-duration').textContent = h > 0 ? `${h}h${m.toString().padStart(2,'0')}` : `${m}min`;
   document.getElementById('stat-errors').textContent = STATE.dailyStats.errors;
+}
+
+function copyActivityLogs() {
+  if (!STATE.activity.length) { showToast('Aucun log à copier', 'orange'); return; }
+  const text = STATE.activity.map(a => `[${a.time}] ${a.label}: ${a.detail}`).join('\n');
+  navigator.clipboard.writeText(text).then(() => showToast('Logs copiés ! Colle dans le chat.', 'green')).catch(() => {
+    // Fallback si clipboard bloqué
+    prompt('Copie ce texte :', text);
+  });
 }
 
 function addActivity(label, detail = '', isIncoming = true) {
