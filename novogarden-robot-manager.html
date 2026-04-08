@@ -1968,7 +1968,7 @@ async function connectBle() {
     // Handshake initial — QUERY_MAP déclenche la session sur le robot
     async function bleSendRaw(b64) {
       if (!BLE_STATE.writeChar) return;
-      try { await BLE_STATE.writeChar.writeValueWithoutResponse(new TextEncoder().encode(b64)); } catch(e) {}
+      try { await BLE_STATE.writeChar.writeValueWithoutResponse(b64ToBytes(b64)); } catch(e) {}
     }
     await bleSendRaw(CMD_B64.QUERY_MAP);
     console.log('[BLE] handshake QUERY_MAP envoyé');
@@ -1982,7 +1982,7 @@ async function connectBle() {
     STATE.bleHeartbeat = setInterval(async () => {
       if (!BLE_STATE.writeChar || !STATE.bleConnected) { clearInterval(STATE.bleHeartbeat); return; }
       try {
-        await BLE_STATE.writeChar.writeValueWithoutResponse(new TextEncoder().encode(CMD_B64.QUERY_MAP));
+        await BLE_STATE.writeChar.writeValueWithoutResponse(b64ToBytes(CMD_B64.QUERY_MAP));
         console.log('[BLE] heartbeat ✓ QUERY_MAP @', new Date().toLocaleTimeString());
       } catch(e) { console.log('[BLE] heartbeat error:', e.message); }
     }, 8000);
@@ -2024,12 +2024,12 @@ function onBleDisconnect() {
           updateBleStatus('connected');
           showToast('BLE reconnecté ✅', 'green');
           // Relancer le handshake + heartbeat après reconnexion
-          try { await writeChar.writeValueWithoutResponse(new TextEncoder().encode(CMD_B64.QUERY_MAP)); } catch(e) {}
+          try { await writeChar.writeValueWithoutResponse(b64ToBytes(CMD_B64.QUERY_MAP)); } catch(e) {}
           if (STATE.bleHeartbeat) clearInterval(STATE.bleHeartbeat);
           STATE.bleHeartbeat = setInterval(async () => {
             if (!BLE_STATE.writeChar || !STATE.bleConnected) { clearInterval(STATE.bleHeartbeat); return; }
             try {
-              await BLE_STATE.writeChar.writeValueWithoutResponse(new TextEncoder().encode(CMD_B64.QUERY_MAP));
+              await BLE_STATE.writeChar.writeValueWithoutResponse(b64ToBytes(CMD_B64.QUERY_MAP));
               console.log('[BLE] heartbeat (reconnect) ✓ @', new Date().toLocaleTimeString());
             } catch(e) {}
           }, 8000);
@@ -2145,7 +2145,7 @@ async function executeBleCommand(cmd) {
   const b64 = CMD_B64[cmd];
   if (!b64 || !BLE_STATE.writeChar) return;
   try {
-    const encoded = new TextEncoder().encode(b64);
+    const encoded = b64ToBytes(b64);
     if (BLE_STATE.writeChar.properties.writeWithoutResponse) {
       await BLE_STATE.writeChar.writeValueWithoutResponse(encoded);
     } else {
@@ -2192,7 +2192,7 @@ async function sendCommand(cmd, params = {}) {
 
   if (BLE_STATE.writeChar) {
     try {
-      const encoded = new TextEncoder().encode(b64);
+      const encoded = b64ToBytes(b64);
       if (BLE_STATE.writeChar.properties.writeWithoutResponse) {
         await BLE_STATE.writeChar.writeValueWithoutResponse(encoded);
       } else {
