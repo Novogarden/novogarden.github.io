@@ -1935,10 +1935,21 @@ function handleMqttMessage(topic, payload) {
   }
   const gpsAbsolute = findGpsCoords(fields, 0);
   if (gpsAbsolute) {
-    console.log('[GPS] coordonnées absolues trouvées:', gpsAbsolute);
+    console.log('[GPS] coordonnées RTK absolues:', gpsAbsolute);
     updateRobotMarker(gpsAbsolute.lat, gpsAbsolute.lng);
     const rtk = document.getElementById('rtk-txt');
     if (rtk) rtk.textContent = `RTK ${gpsAbsolute.lat.toFixed(6)}, ${gpsAbsolute.lng.toFixed(6)}`;
+    // Calibration automatique depuis les coords RTK absolues — pas besoin d'intervention manuelle
+    if (!STATE.mapCalib || !STATE._gpsCalibFromRobot) {
+      const pos = STATE.robotLocalPos || {x: 0, y: 0};
+      STATE.mapCalib = { refLat: gpsAbsolute.lat, refLng: gpsAbsolute.lng, localX: pos.x, localY: pos.y };
+      STATE._gpsCalibFromRobot = true;
+      const calibJson = JSON.stringify(STATE.mapCalib);
+      localStorage.setItem('ng_mapcalib', calibJson);
+      if (RELAY.connected && RELAY.client) RELAY.client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', calibJson, { retain: true, qos: 1 });
+      showToast('📍 Position RTK détectée automatiquement ✅', 'green');
+      if (_map) { _userMovedMap = false; _map.setView([gpsAbsolute.lat, gpsAbsolute.lng], 19); }
+    }
   }
 
   // Position locale du robot depuis f12 (float32, mètres depuis la base) — fallback si pas de GPS absolu
@@ -3154,11 +3165,13 @@ function clearCalib() {
   STATE.mapCalib = null;
   STATE._mapCenteredOnCalib = false;
   localStorage.removeItem('ng_mapcalib');
-  // Effacer aussi sur HiveMQ (publish vide avec retain)
+  // Effacer le retain HiveMQ (publish payload vide = supprime le retained message)
   if (RELAY.connected && RELAY.client) {
     RELAY.client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', '', { retain: true, qos: 1 });
+    showToast('🗑️ Calibration effacée partout — le robot se placera auto dès qu\'il bouge', 'orange');
+  } else {
+    showToast('🗑️ Calibration locale effacée (relay non connecté — reconnecte-toi pour effacer HiveMQ)', 'orange');
   }
-  showToast('🗑️ Calibration effacée — refais-la avec le GPS 🎯 sur le téléphone', 'orange');
 }
 
 function toggleFollowRobot() {
