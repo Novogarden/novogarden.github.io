@@ -845,6 +845,18 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         <button class="map-tool-btn" title="Centrer sur robot" onclick="centerOnRobot()">
           <svg viewBox="0 0 24 24"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06z"/></svg>
         </button>
+        <!-- Calibration GPS -->
+        <button class="map-tool-btn" id="tool-calibrate" title="Calibrer position robot (📍 cliquer où est le robot)" onclick="startMapCalibration()" style="background:#fff3cd;">
+          <svg viewBox="0 0 24 24" style="fill:#856404"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+        </button>
+        <!-- Goto point-and-click -->
+        <button class="map-tool-btn" id="tool-goto" title="Envoyer robot à un point (cliquer sur la carte)" onclick="setMapTool('goto')" style="background:#e8f0fe;">
+          <svg viewBox="0 0 24 24" style="fill:#1a73e8"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
+        </button>
+        <!-- Charger zone depuis robot -->
+        <button class="map-tool-btn" title="Afficher zone robot sur carte" onclick="if(STATE.robotZone)displayRobotZoneLocal(STATE.robotZone);else showToast('Aucune zone reçue du robot — connecte-toi et attends le QUERY_MAP','orange')" style="background:#f3e5f5;">
+          <svg viewBox="0 0 24 24" style="fill:#7b1fa2"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/></svg>
+        </button>
         <button class="map-tool-btn" title="Sauvegarder carte" onclick="saveMapData()" style="background:#e8f5e9;">
           <svg viewBox="0 0 24 24" style="fill:var(--green)"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
         </button>
@@ -1874,6 +1886,22 @@ function handleMqttMessage(topic, payload) {
     }
   }
 
+  // Position locale du robot depuis f12 (float32, mètres depuis la base)
+  // f12.f2 = Est (X), f12.f5 = Nord (Y)
+  if (fields.f12 && typeof fields.f12 === 'object') {
+    const x = fields.f12.f2, y = fields.f12.f5;
+    if (typeof x === 'number') {
+      const nx = x, ny = (typeof y === 'number' ? y : 0);
+      STATE.robotLocalPos = { x: nx, y: ny };
+      updateRobotFromLocalCoords(nx, ny);
+    }
+  }
+
+  // Zone existante depuis f23 (réponse à QUERY_MAP)
+  if (fields.f23 && typeof fields.f23 === 'object') {
+    handleRobotZoneData(fields.f23);
+  }
+
   // En mode gateway : relayer le statut au PC via HiveMQ
   if (RELAY.mode === 'gateway' && RELAY.connected && (robotStatus || battery != null)) {
     const statusMsg = JSON.stringify({ status: robotStatus, battery });
@@ -2779,7 +2807,7 @@ let _mapTool = 'none';
 let _currentTerrainId = '';
 let _drawPoints = [];
 let _drawLayer = null;
-let _layers = { perimeters:[], obstacles:[], corridors:[], rows:[], robotMarker:null, rtkMarker:null };
+let _layers = { perimeters:[], obstacles:[], corridors:[], rows:[], robotMarker:null, rtkMarker:null, robotZone:null, gotoMarker:null };
 
 function initMap() {
   if (_map) { setTimeout(()=>_map.invalidateSize(),200); refreshMapLayers(); return; }
@@ -2819,7 +2847,7 @@ function setMapTool(tool) {
   const btn = document.getElementById('tool-'+tool);
   if (btn) btn.classList.add('active');
 
-  const labels = { none:'Curseur', perimeter:'Tracer périmètre (cliquer les points)', obstacle:'Tracer obstacle/exclusion', corridor:'Tracer corridor d\'accès', rows:'Calculer lignes de tonte' };
+  const labels = { none:'Curseur', perimeter:'Tracer périmètre (cliquer les points)', obstacle:'Tracer obstacle/exclusion', corridor:'Tracer corridor d\'accès', rows:'Calculer lignes de tonte', goto:'Cliquer pour envoyer le robot à ce point', calibrate:'Calibration en cours…' };
   document.getElementById('map-tool-label').textContent = 'Outil: ' + (labels[tool]||tool);
   document.getElementById('finish-shape-btn').style.display = (tool !== 'none' && tool !== 'rows') ? 'block' : 'none';
   document.getElementById('map-rows-bar').style.display = tool === 'rows' ? 'flex' : 'none';
@@ -2833,9 +2861,30 @@ function setMapTool(tool) {
 }
 
 function onMapClick(e) {
+  const {lat,lng} = e.latlng;
+
+  // Calibration : associe ce point GPS aux coords locales actuelles du robot
+  if (_mapTool === 'calibrate') {
+    const pos = STATE.robotLocalPos || {x:0, y:0};
+    STATE.mapCalib = { refLat:lat, refLng:lng, localX:pos.x, localY:pos.y };
+    localStorage.setItem('ng_mapcalib', JSON.stringify(STATE.mapCalib));
+    _mapTool = 'none';
+    document.getElementById('map-hint').classList.remove('show');
+    showToast(`✅ Calibré ! Robot=(${pos.x.toFixed(1)}m,${pos.y.toFixed(1)}m) → GPS=(${lat.toFixed(5)},${lng.toFixed(5)})`, 'green');
+    // Ré-afficher robot et zone avec la nouvelle calibration
+    if (STATE.robotLocalPos) updateRobotFromLocalCoords(STATE.robotLocalPos.x, STATE.robotLocalPos.y);
+    if (STATE.robotZone) displayRobotZoneLocal(STATE.robotZone);
+    return;
+  }
+
+  // Point-and-click goto
+  if (_mapTool === 'goto') {
+    sendGotoPoint(lat, lng);
+    return;
+  }
+
   if (_mapTool === 'none') return;
   if (_mapTool === 'rows') return;
-  const {lat,lng} = e.latlng;
   _drawPoints.push([lat,lng]);
 
   if (_drawLayer) _map.removeLayer(_drawLayer);
@@ -2943,6 +2992,125 @@ function centerOnRobot() {
 
 function saveMapData() {
   localStorage.setItem('ng_mapdata', JSON.stringify(STATE.mapData));
+}
+
+// ============================================================
+// COORDONNÉES LOCALES → GPS
+// Système : f12.f2 = Est (m), f12.f5 = Nord (m) depuis la base
+// Calibration : click sur la carte "robot est ici" → calcul offset
+// ============================================================
+
+// Charge la calibration depuis le localStorage
+STATE.mapCalib = JSON.parse(localStorage.getItem('ng_mapcalib') || 'null');
+
+function localToGps(x, y) {
+  const c = STATE.mapCalib;
+  if (!c) return null;
+  const cosLat = Math.cos(c.refLat * Math.PI / 180);
+  return {
+    lat: c.refLat + (y - c.localY) / 111320,
+    lng: c.refLng + (x - c.localX) / (111320 * cosLat)
+  };
+}
+
+function gpsToLocal(lat, lng) {
+  const c = STATE.mapCalib;
+  if (!c) return null;
+  const cosLat = Math.cos(c.refLat * Math.PI / 180);
+  return {
+    x: c.localX + (lng - c.refLng) * 111320 * cosLat,
+    y: c.localY + (lat - c.refLat) * 111320
+  };
+}
+
+function updateRobotFromLocalCoords(x, y) {
+  const label = `x=${x.toFixed(1)}m y=${y.toFixed(1)}m`;
+  const rtk = document.getElementById('rtk-txt');
+  if (rtk) rtk.textContent = 'RTK ' + label;
+  const gps = localToGps(x, y);
+  if (gps) updateRobotMarker(gps.lat, gps.lng);
+}
+
+// Calibration : l'utilisateur clique sur la carte à l'endroit du robot
+function startMapCalibration() {
+  if (!STATE.robotLocalPos) {
+    showToast('En attente de la position robot (f12)…', 'orange');
+    return;
+  }
+  _mapTool = 'calibrate';
+  const hint = document.getElementById('map-hint');
+  hint.textContent = '📍 Cliquez ici sur la carte — là où se trouve le robot maintenant';
+  hint.classList.add('show');
+  showToast('Cliquez sur la carte à la position du robot', 'blue');
+}
+
+// Décoder le blob zone f23 → polygone sur la carte
+function handleRobotZoneData(f23) {
+  try {
+    const hexBlob = f23?.f2?.f3?.f1;
+    if (!hexBlob || typeof hexBlob !== 'string' || hexBlob.length < 10) return;
+    // Décoder hex → bytes → protobuf (nouveau depth=0)
+    const bytes = new Uint8Array(hexBlob.match(/.{2}/g).map(h => parseInt(h, 16)));
+    const outer = decodeProtobuf(bytes, 0);
+    console.log('[MAP] f23 zone outer:', JSON.stringify(outer));
+    // Structure: outer.f1 → {f1:type, f3:id, f4:1, f5:{points répétés}}
+    const zone = outer.f1;
+    if (!zone || typeof zone !== 'object') return;
+    // Extraire les points: zone.f5 peut être un tableau ou un objet unique
+    let pts = zone.f5;
+    if (!pts) return;
+    if (!Array.isArray(pts)) pts = [pts];
+    const localPts = [];
+    for (const pt of pts) {
+      if (typeof pt === 'object' && typeof pt.f1 === 'number' && typeof pt.f2 === 'number') {
+        localPts.push([pt.f1, pt.f2]);
+      }
+    }
+    console.log('[MAP] zone points extraits:', localPts.length, localPts.slice(0,3));
+    if (localPts.length > 0) {
+      STATE.robotZone = localPts;
+      displayRobotZoneLocal(localPts);
+      addActivity('🗺️ Zone robot', localPts.length + ' points chargés depuis f23');
+    }
+  } catch(e) {
+    console.log('[MAP] zone decode error:', e.message);
+  }
+}
+
+// Afficher la zone robot (coords locales → GPS)
+function displayRobotZoneLocal(localPts) {
+  if (!_map) return;
+  if (_layers.robotZone) { try { _map.removeLayer(_layers.robotZone); } catch(e) {} }
+  const gpsPoints = localPts.map(([x,y]) => {
+    const g = localToGps(x, y);
+    return g ? [g.lat, g.lng] : null;
+  }).filter(Boolean);
+  if (gpsPoints.length < 3) {
+    // Pas de calibration → afficher en coords brutes avec avertissement
+    addActivity('🗺️ Zone', '⚠️ Calibrer la carte pour afficher la zone (📍)');
+    return;
+  }
+  _layers.robotZone = L.polygon(gpsPoints, {
+    color:'#7DB532', fillColor:'#7DB532', fillOpacity:0.15, weight:2, dashArray:'6,3'
+  }).bindPopup(`Zone Lymow — ${gpsPoints.length} points`).addTo(_map);
+  _map.fitBounds(_layers.robotZone.getBounds(), { padding:[40,40] });
+  showToast('Zone robot affichée sur la carte ✅', 'green');
+}
+
+// Commande goto point (point-and-click)
+function sendGotoPoint(lat, lng) {
+  const local = gpsToLocal(lat, lng);
+  if (!local) { showToast('Calibration requise', 'red'); return; }
+  console.log('[MAP] goto local:', local.x.toFixed(2), local.y.toFixed(2));
+  // Marquer la destination sur la carte
+  if (_layers.gotoMarker) { try{_map.removeLayer(_layers.gotoMarker);}catch(e){} }
+  _layers.gotoMarker = L.circleMarker([lat,lng],{
+    radius:8, color:'#FF8C00', fillColor:'#FF8C00', fillOpacity:0.8, weight:2
+  }).bindPopup(`→ ${local.x.toFixed(1)}m Est, ${local.y.toFixed(1)}m Nord`).openPopup().addTo(_map);
+  // TODO: encoder en protobuf et envoyer via MQTT
+  // Format probable : f13 ou f14 avec sous-champs float32 x,y
+  addActivity('🎯 Goto', `x=${local.x.toFixed(1)}m y=${local.y.toFixed(1)}m — cmd à définir`, false);
+  showToast(`Cible: ${local.x.toFixed(1)}m Est, ${local.y.toFixed(1)}m Nord`, 'orange');
 }
 
 function selectMapTerrain(el, tid) {
