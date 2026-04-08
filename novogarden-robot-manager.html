@@ -845,6 +845,10 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         <button class="map-tool-btn" id="btn-follow-robot" title="Suivre le robot (centrage auto)" onclick="toggleFollowRobot()" style="background:#e8f5e9;">
           <svg viewBox="0 0 24 24" style="fill:var(--green)"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06z"/></svg>
         </button>
+        <!-- Aller à la calibration — secours si la carte est perdue -->
+        <button class="map-tool-btn" title="Aller à la position calibrée" onclick="goToCalib()" style="background:#fce4ec;">
+          <svg viewBox="0 0 24 24" style="fill:#c62828"><path d="M21 3L3 10.53v.98l6.84 2.65L12.48 21h.98L21 3z"/></svg>
+        </button>
         <!-- Calibration GPS automatique (téléphone à côté du robot) -->
         <button class="map-tool-btn" id="tool-calibrate-auto" title="Je suis à côté du robot — utiliser mon GPS" onclick="calibrateWithPhoneGps()" style="background:#e3f2fd;">
           <svg viewBox="0 0 24 24" style="fill:#1565c0"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06z"/></svg>
@@ -2199,12 +2203,13 @@ function connectRelay() {
           const isMine = existing && RELAY.mode === 'gateway';
           if (!isMine) {
             STATE.mapCalib = calib;
+            STATE._mapCenteredOnCalib = false;
             localStorage.setItem('ng_mapcalib', msg);
-            showToast('📍 Calibration synchronisée ✅', 'green');
-            // Naviguer directement vers le point de référence (refLat/refLng = position robot au moment de la calibration)
+            showToast('📍 Calibration synchronisée — ouvre Carte pour te centrer ✅', 'green');
             if (_map) {
               _userMovedMap = false;
               _map.setView([calib.refLat, calib.refLng], 19);
+              STATE._mapCenteredOnCalib = true;
             }
             if (STATE.robotLocalPos) updateRobotFromLocalCoords(STATE.robotLocalPos.x, STATE.robotLocalPos.y);
             if (STATE.robotZone) displayRobotZoneLocal(STATE.robotZone);
@@ -2852,7 +2857,18 @@ let _userMovedMap = false;   // true si l'utilisateur a bougé la carte manuelle
 let _recenterTimer = null;   // reprend l'auto-centrage après 5s
 
 function initMap() {
-  if (_map) { setTimeout(()=>_map.invalidateSize(),200); refreshMapLayers(); return; }
+  if (_map) {
+    setTimeout(()=>_map.invalidateSize(),200);
+    refreshMapLayers();
+    // Re-centrer si calibration disponible et pas encore centrée
+    const calib = STATE.mapCalib || JSON.parse(localStorage.getItem('ng_mapcalib') || 'null');
+    if (calib && calib.refLat && !STATE._mapCenteredOnCalib) {
+      STATE._mapCenteredOnCalib = true;
+      _userMovedMap = false;
+      _map.setView([calib.refLat, calib.refLng], 19);
+    }
+    return;
+  }
   _map = L.map('leaflet-map', { zoomControl:false, attributionControl:false });
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     maxZoom:22, attribution:'© Esri Satellite'
@@ -3042,6 +3058,14 @@ function centerOnRobot() {
   } else {
     showToast('Position GPS robot inconnue — calibre la carte d\'abord (📍)', 'orange');
   }
+}
+
+function goToCalib() {
+  const calib = STATE.mapCalib || JSON.parse(localStorage.getItem('ng_mapcalib') || 'null');
+  if (!calib || !calib.refLat) { showToast('Aucune calibration — utilise le bouton GPS 🎯 sur le téléphone', 'red'); return; }
+  _userMovedMap = false;
+  _map.setView([calib.refLat, calib.refLng], 19);
+  showToast(`📍 ${calib.refLat.toFixed(5)}, ${calib.refLng.toFixed(5)}`, 'green');
 }
 
 function toggleFollowRobot() {
