@@ -1870,6 +1870,59 @@ function handleMqttMessage(topic, payload) {
   const fields = decodeProtobuf(protoBytes);
   console.log('[MQTT]   protobuf fields:', JSON.stringify(fields));
 
+  // ═══ SCANNER GPS NORMANDIE ═══════════════════════════════════════════
+  // Cherche dans les bytes bruts les patterns float64 proches de lat~49, lng~-1..1
+  // ET scanne récursivement tous les champs pour trouver des valeurs GPS-like
+  (function scanGps() {
+    // 1. Scan raw bytes pour float64 (wireType=1) dans plage GPS France
+    const dv = new DataView(protoBytes.buffer, protoBytes.byteOffset, protoBytes.byteLength);
+    const gpsHits = [];
+    for (let i = 0; i <= protoBytes.length - 8; i++) {
+      const v = dv.getFloat64(i, true); // little-endian
+      if (isFinite(v) && !isNaN(v)) {
+        if ((v >= 42 && v <= 52) || (v >= -5 && v <= 10)) { // plage France
+          // Remonter pour trouver le tag protobuf (cherche tag 1-2 octets avant)
+          let tagByte = i > 0 ? protoBytes[i-1] : -1;
+          let fieldNum = tagByte >>> 3;
+          let wireType = tagByte & 0x7;
+          gpsHits.push({ offset: i, value: v, possibleField: (wireType===1 ? 'f'+fieldNum : '?'), hex: Array.from(protoBytes.slice(i,i+8)).map(b=>b.toString(16).padStart(2,'0')).join(' ') });
+        }
+      }
+    }
+    if (gpsHits.length > 0) {
+      console.warn('🌍 [GPS-SCAN] Valeurs float64 plage France trouvées dans proto brut:', JSON.stringify(gpsHits));
+    }
+
+    // 2. Scan récursif de tous les champs décodés
+    function scanFields(obj, path) {
+      if (!obj || typeof obj !== 'object') return;
+      for (const [k, v] of Object.entries(obj)) {
+        const p = path ? path + '.' + k : k;
+        if (typeof v === 'number' && isFinite(v)) {
+          if ((v >= 42 && v <= 52) || (v >= -5 && v <= 10)) {
+            console.warn(`🌍 [GPS-SCAN] Champ ${p} = ${v} → possible GPS France`);
+          }
+        } else if (typeof v === 'object' && v !== null) {
+          scanFields(v, p);
+        }
+      }
+    }
+    scanFields(fields, '');
+
+    // 3. Log TOUS les float64 (wireType=1) trouvés dans le message brut
+    const allDoubles = [];
+    for (let i = 0; i <= protoBytes.length - 8; i++) {
+      const v = dv.getFloat64(i, true);
+      if (isFinite(v) && !isNaN(v) && Math.abs(v) > 0.001 && Math.abs(v) < 1e9) {
+        let tagByte = i > 0 ? protoBytes[i-1] : -1;
+        let wt = tagByte & 0x7;
+        if (wt === 1) allDoubles.push({ off: i, v: v.toFixed(8), f: 'f'+(tagByte>>>3) });
+      }
+    }
+    if (allDoubles.length) console.log('📐 [DOUBLES] Tous les float64 du message:', JSON.stringify(allDoubles));
+  })();
+  // ═════════════════════════════════════════════════════════════════════
+
   // Mapping confirmé via ADB logcat (---✅-💖-状态更新---robotStatus: N)
   const STATUS_MAP = {
     1: 'waiting',   // ROBOT_STATUS_WAITING ✅ confirmé
