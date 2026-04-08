@@ -1974,18 +1974,15 @@ async function connectBle() {
     if ('wakeLock' in navigator) {
       try { STATE.wakeLock = await navigator.wakeLock.request('screen'); console.log('[BLE] Wake Lock actif'); } catch(e) {}
     }
-    // Heartbeat BLE toutes les 15s — alterne QUERY_MAP et EDEoNA==
+    // Heartbeat BLE toutes les 8s — QUERY_MAP uniquement (f5=19, valeur confirmée acceptée par le robot)
     if (STATE.bleHeartbeat) clearInterval(STATE.bleHeartbeat);
-    let _hbToggle = false;
     STATE.bleHeartbeat = setInterval(async () => {
       if (!BLE_STATE.writeChar || !STATE.bleConnected) { clearInterval(STATE.bleHeartbeat); return; }
       try {
-        _hbToggle = !_hbToggle;
-        const hb = new TextEncoder().encode(_hbToggle ? CMD_B64.QUERY_MAP : 'EDEoNA==');
-        await BLE_STATE.writeChar.writeValueWithoutResponse(hb);
-        console.log('[BLE] heartbeat ✓', _hbToggle ? 'QUERY_MAP' : 'NA');
+        await BLE_STATE.writeChar.writeValueWithoutResponse(new TextEncoder().encode(CMD_B64.QUERY_MAP));
+        console.log('[BLE] heartbeat ✓ QUERY_MAP @', new Date().toLocaleTimeString());
       } catch(e) { console.log('[BLE] heartbeat error:', e.message); }
-    }, 15000);
+    }, 8000);
   } catch(e) {
     console.error('[BLE] erreur:', e);
     showToast('BLE erreur: ' + e.message, 'red');
@@ -2023,6 +2020,16 @@ function onBleDisconnect() {
           STATE.bleConnected = true;
           updateBleStatus('connected');
           showToast('BLE reconnecté ✅', 'green');
+          // Relancer le handshake + heartbeat après reconnexion
+          try { await writeChar.writeValueWithoutResponse(new TextEncoder().encode(CMD_B64.QUERY_MAP)); } catch(e) {}
+          if (STATE.bleHeartbeat) clearInterval(STATE.bleHeartbeat);
+          STATE.bleHeartbeat = setInterval(async () => {
+            if (!BLE_STATE.writeChar || !STATE.bleConnected) { clearInterval(STATE.bleHeartbeat); return; }
+            try {
+              await BLE_STATE.writeChar.writeValueWithoutResponse(new TextEncoder().encode(CMD_B64.QUERY_MAP));
+              console.log('[BLE] heartbeat (reconnect) ✓ @', new Date().toLocaleTimeString());
+            } catch(e) {}
+          }, 8000);
         }
       } catch(e) {
         console.log('[BLE] reconnexion échouée:', e.message);
@@ -2036,13 +2043,26 @@ function onBleDisconnect() {
 function onBleNotify(event) {
   const value = event.target.value;
   const bytes = new Uint8Array(value.buffer);
+  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' ');
   const str = new TextDecoder().decode(bytes);
-  console.log('[BLE] notify reçu:', str);
-  // Les messages BLE sont aussi des base64 protobuf
+  console.log('[BLE] notify hex:', hex);
+  console.log('[BLE] notify str:', str);
+  let detail = 'hex: ' + hex;
+  // Essai 1 : décoder en binaire direct (cas le plus probable)
   try {
-    const pb = decodeProtobuf(Buffer.from ? Buffer.from(str, 'base64') : b64ToBytes(str));
-    console.log('[BLE] notify fields:', JSON.stringify(pb));
+    const pb = decodeProtobuf(bytes);
+    const pbs = JSON.stringify(pb);
+    console.log('[BLE] notify→binary proto:', pbs);
+    detail += ' | proto: ' + pbs.slice(0,50);
   } catch(e) {}
+  // Essai 2 : décoder comme base64 → binary → proto
+  try {
+    const pb2 = decodeProtobuf(b64ToBytes(str));
+    const pb2s = JSON.stringify(pb2);
+    console.log('[BLE] notify→b64 proto:', pb2s);
+    detail += ' | b64→proto: ' + pb2s.slice(0,50);
+  } catch(e) {}
+  addActivity('BLE ← robot', detail);
 }
 
 // ============================================================
