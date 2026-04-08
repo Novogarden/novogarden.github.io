@@ -822,6 +822,10 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
       </div>
       <!-- Hint dessin -->
       <div class="map-hint" id="map-hint">Touchez la carte pour placer les points</div>
+      <!-- Bannière calibration manquante -->
+      <div id="calib-needed-banner" style="display:none;position:absolute;bottom:60px;left:50%;transform:translateX(-50%);z-index:1002;background:#fff3cd;border:2px solid #FF8C00;border-radius:14px;padding:10px 16px;text-align:center;font-size:12px;font-weight:700;color:#856404;box-shadow:0 4px 16px rgba(0,0,0,0.2);white-space:nowrap;">
+        📍 Carte non calibrée — <button onclick="promptManualCoords()" style="background:#FF8C00;color:white;border:none;border-radius:8px;padding:4px 10px;font-weight:800;font-size:12px;cursor:pointer;margin-left:4px;">Saisir mes coordonnées GPS</button>
+      </div>
       <!-- Barre outils -->
       <div class="map-toolbar">
         <button class="map-tool-btn" id="tool-none" title="Curseur" onclick="setMapTool('none')">
@@ -2269,26 +2273,32 @@ function connectRelay() {
     // Réception calibration (tous modes — retain → immédiat à la connexion)
     if (topic === 'novogarden/' + CONFIG.ROBOT_SERIAL + '/calib') {
       try {
+        if (!msg || msg.length < 2) return; // payload vide = suppression retain, ignorer
         const calib = JSON.parse(msg);
-        if (calib.refLat && calib.refLng) {
-          // Ne pas écraser si on a déjà une calibration locale plus précise (gateway avec GPS ajusté)
-          const existing = STATE.mapCalib;
-          const isMine = existing && RELAY.mode === 'gateway';
-          if (!isMine) {
-            STATE.mapCalib = calib;
-            STATE._mapCenteredOnCalib = false;
-            localStorage.setItem('ng_mapcalib', msg);
-            showToast('📍 Calibration synchronisée — ouvre Carte pour te centrer ✅', 'green');
-            if (_map) {
-              _userMovedMap = false;
-              _map.setView([calib.refLat, calib.refLng], 19);
-              STATE._mapCenteredOnCalib = true;
-            }
-            if (STATE.robotLocalPos) updateRobotFromLocalCoords(STATE.robotLocalPos.x, STATE.robotLocalPos.y);
-            if (STATE.robotZone) displayRobotZoneLocal(STATE.robotZone);
-          } else {
-            console.log('[RELAY] calib reçue ignorée — on est gateway avec calibration locale');
+        const inEurope = calib && calib.refLat >= 35 && calib.refLat <= 72 && calib.refLng >= -15 && calib.refLng <= 45;
+        if (!inEurope) {
+          console.warn('[CALIB] calibration reçue hors Europe — ignorée et effacée du retain HiveMQ', calib);
+          // Effacer le retain pollué immédiatement
+          if (RELAY.client) RELAY.client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', '', { retain: true, qos: 1 });
+          localStorage.removeItem('ng_mapcalib');
+          STATE.mapCalib = null;
+          return;
+        }
+        // Calib valide (en Europe)
+        const existing = STATE.mapCalib;
+        const isMine = existing && RELAY.mode === 'gateway';
+        if (!isMine) {
+          STATE.mapCalib = calib;
+          STATE._mapCenteredOnCalib = false;
+          localStorage.setItem('ng_mapcalib', msg);
+          showToast('📍 Calibration synchronisée ✅', 'green');
+          if (_map) {
+            _userMovedMap = false;
+            _map.setView([calib.refLat, calib.refLng], 19);
+            STATE._mapCenteredOnCalib = true;
           }
+          if (STATE.robotLocalPos) updateRobotFromLocalCoords(STATE.robotLocalPos.x, STATE.robotLocalPos.y);
+          if (STATE.robotZone) displayRobotZoneLocal(STATE.robotZone);
         }
       } catch(e) {}
       return;
@@ -3102,8 +3112,15 @@ function clearLastShape() {
   showToast('Rien à supprimer');
 }
 
+function updateCalibBanner() {
+  const b = document.getElementById('calib-needed-banner');
+  if (!b) return;
+  b.style.display = STATE.mapCalib ? 'none' : 'block';
+}
+
 function refreshMapLayers() {
   if (!_map) return;
+  updateCalibBanner();
   // Supprimer toutes les couches existantes
   [..._layers.perimeters, ..._layers.obstacles, ..._layers.corridors, ..._layers.rows].forEach(l=>{ try{_map.removeLayer(l);}catch(e){} });
   _layers.perimeters=[]; _layers.obstacles=[]; _layers.corridors=[]; _layers.rows=[];
@@ -3184,7 +3201,7 @@ function goToCalib() {
 }
 
 function promptManualCoords() {
-  const input = prompt('Colle les coordonnées GPS du robot\n(format: 48.123456, 2.345678\nou copie depuis Google Maps clic droit)');
+  const input = prompt('📍 Coordonnées GPS de ton jardin (Normandie)\n\nOuvre Google Maps → clic droit sur ton jardin → copie les coords\nFormat: 49.123456, -0.456789', '');
   if (!input) return;
   // Accepte "48.123, 2.456" ou "48.123456,2.456789"
   const match = input.trim().match(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/);
@@ -3199,6 +3216,8 @@ function promptManualCoords() {
   if (RELAY.connected && RELAY.client) RELAY.client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', calibJson, { retain: true, qos: 1 });
   _userMovedMap = false;
   if (_map) _map.setView([lat, lng], 19);
+  updateCalibBanner();
+  if (STATE.robotLocalPos) updateRobotFromLocalCoords(STATE.robotLocalPos.x, STATE.robotLocalPos.y);
   showToast(`✅ Position définie : ${lat.toFixed(5)}, ${lng.toFixed(5)}`, 'green');
 }
 
