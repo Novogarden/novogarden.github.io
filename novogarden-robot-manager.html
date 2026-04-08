@@ -1953,12 +1953,19 @@ async function connectBle() {
 
     BLE_STATE.writeChar = writeChar;
     BLE_STATE.notifyChar = notifyChar;
-    console.log('[BLE] ✅ write char:', writeChar.uuid);
+    const writeUUID = writeChar.uuid;
+    const notifyUUID = notifyChar ? notifyChar.uuid : 'aucun';
+    console.log('[BLE] ✅ write char:', writeUUID);
+    console.log('[BLE] ✅ notify char:', notifyUUID);
+    addActivity('BLE write UUID', writeUUID);
+    addActivity('BLE notify UUID', notifyUUID);
 
     if (notifyChar) {
       await notifyChar.startNotifications();
       notifyChar.addEventListener('characteristicvaluechanged', onBleNotify);
       console.log('[BLE] ✅ notify actif');
+    } else {
+      addActivity('BLE notify', '⚠️ aucun notify trouvé — les réponses passent par MQTT uniquement');
     }
 
     STATE.bleConnected = true;
@@ -1968,9 +1975,14 @@ async function connectBle() {
     // Handshake initial — QUERY_MAP déclenche la session sur le robot
     async function bleSendRaw(b64) {
       if (!BLE_STATE.writeChar) return;
-      try { await BLE_STATE.writeChar.writeValueWithoutResponse(b64ToBytes(b64)); } catch(e) {}
+      const bytes = b64ToBytes(b64);
+      const hex = Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' ');
+      console.log('[BLE] send hex:', hex);
+      try { await BLE_STATE.writeChar.writeValueWithoutResponse(bytes); } catch(e) { console.log('[BLE] send error:', e.message); }
     }
     await bleSendRaw(CMD_B64.QUERY_MAP);
+    const qmHex = Array.from(b64ToBytes(CMD_B64.QUERY_MAP)).map(b=>b.toString(16).padStart(2,'0')).join(' ');
+    addActivity('BLE → QUERY_MAP', qmHex);
     console.log('[BLE] handshake QUERY_MAP envoyé');
 
     // Wake Lock — empêche Android de mettre Chrome en veille
@@ -2198,9 +2210,10 @@ async function sendCommand(cmd, params = {}) {
       } else {
         await BLE_STATE.writeChar.writeValueWithResponse(encoded);
       }
-      console.log('[BLE] cmd envoyée:', cmd);
+      const sentHex = Array.from(encoded).map(b=>b.toString(16).padStart(2,'0')).join(' ');
+      console.log('[BLE] cmd envoyée:', cmd, '| hex:', sentHex);
       showToast(labels[cmd] || cmd, 'green');
-      addActivity(`Commande BLE: ${labels[cmd] || cmd}`, cmd, false);
+      addActivity(`BLE→${cmd}`, sentHex, false);
       return;
     } catch(e) { console.error('[BLE] error:', e); showToast('BLE erreur: ' + e.message, 'red'); }
   }
