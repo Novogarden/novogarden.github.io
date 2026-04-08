@@ -849,6 +849,10 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         <button class="map-tool-btn" title="Aller à la position calibrée" onclick="goToCalib()" style="background:#fce4ec;">
           <svg viewBox="0 0 24 24" style="fill:#c62828"><path d="M21 3L3 10.53v.98l6.84 2.65L12.48 21h.98L21 3z"/></svg>
         </button>
+        <!-- Effacer calibration corrompue -->
+        <button class="map-tool-btn" title="Effacer calibration et recommencer" onclick="if(confirm('Effacer la calibration ?'))clearCalib()" style="background:#ffebee;">
+          <svg viewBox="0 0 24 24" style="fill:#b71c1c"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm2.46-7.12l1.41-1.41L12 12.59l2.12-2.12 1.41 1.41L13.41 14l2.12 2.12-1.41 1.41L12 15.41l-2.12 2.12-1.41-1.41L10.59 14l-2.13-2.12zM15.5 4l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+        </button>
         <!-- Calibration GPS automatique (téléphone à côté du robot) -->
         <button class="map-tool-btn" id="tool-calibrate-auto" title="Je suis à côté du robot — utiliser mon GPS" onclick="calibrateWithPhoneGps()" style="background:#e3f2fd;">
           <svg viewBox="0 0 24 24" style="fill:#1565c0"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3c-.46-4.17-3.77-7.48-7.94-7.94V1h-2v2.06C6.83 3.52 3.52 6.83 3.06 11H1v2h2.06c.46 4.17 3.77 7.48 7.94 7.94V23h2v-2.06c4.17-.46 7.48-3.77 7.94-7.94H23v-2h-2.06z"/></svg>
@@ -2860,12 +2864,18 @@ function initMap() {
   if (_map) {
     setTimeout(()=>_map.invalidateSize(),200);
     refreshMapLayers();
-    // Re-centrer si calibration disponible et pas encore centrée
+    // Re-centrer si calibration valide disponible et pas encore centrée
     const calib = STATE.mapCalib || JSON.parse(localStorage.getItem('ng_mapcalib') || 'null');
-    if (calib && calib.refLat && !STATE._mapCenteredOnCalib) {
+    const calibOk = calib && calib.refLat && Math.abs(calib.refLat) <= 90 && Math.abs(calib.refLng) <= 180;
+    if (calibOk && !STATE._mapCenteredOnCalib) {
+      STATE.mapCalib = calib;
       STATE._mapCenteredOnCalib = true;
       _userMovedMap = false;
       _map.setView([calib.refLat, calib.refLng], 19);
+    } else if (calib && !calibOk) {
+      console.warn('[MAP] calibration invalide ignorée:', calib);
+      STATE.mapCalib = null;
+      localStorage.removeItem('ng_mapcalib');
     }
     return;
   }
@@ -2876,12 +2886,18 @@ function initMap() {
   L.control.zoom({ position:'bottomright' }).addTo(_map);
   L.control.attribution({ position:'bottomleft', prefix:'' }).addTo(_map);
 
-  // Centrage initial : calibration > dernière position > France par défaut
+  // Centrage initial : calibration valide > dernière position > France par défaut
   const calib = STATE.mapCalib || JSON.parse(localStorage.getItem('ng_mapcalib') || 'null');
-  if (calib && calib.refLat) {
+  const calibValid = calib && calib.refLat && Math.abs(calib.refLat) <= 90 && Math.abs(calib.refLng) <= 180;
+  if (calibValid) {
+    STATE.mapCalib = calib;
     _map.setView([calib.refLat, calib.refLng], 19);
-    if (calib) { STATE.mapCalib = calib; }
   } else {
+    if (calib && !calibValid) {
+      console.warn('[MAP] calibration invalide ignorée:', calib);
+      STATE.mapCalib = null;
+      localStorage.removeItem('ng_mapcalib');
+    }
     const lastPos = localStorage.getItem('ng_map_center');
     if (lastPos) {
       const [lat,lng,z] = JSON.parse(lastPos);
@@ -3063,9 +3079,25 @@ function centerOnRobot() {
 function goToCalib() {
   const calib = STATE.mapCalib || JSON.parse(localStorage.getItem('ng_mapcalib') || 'null');
   if (!calib || !calib.refLat) { showToast('Aucune calibration — utilise le bouton GPS 🎯 sur le téléphone', 'red'); return; }
+  // Vérifier que les coordonnées sont valides
+  if (Math.abs(calib.refLat) > 90 || Math.abs(calib.refLng) > 180) {
+    showToast(`❌ Calibration invalide (lat=${calib.refLat.toFixed(2)}) — réinitialise avec le bouton 🗑️`, 'red');
+    return;
+  }
   _userMovedMap = false;
   _map.setView([calib.refLat, calib.refLng], 19);
   showToast(`📍 ${calib.refLat.toFixed(5)}, ${calib.refLng.toFixed(5)}`, 'green');
+}
+
+function clearCalib() {
+  STATE.mapCalib = null;
+  STATE._mapCenteredOnCalib = false;
+  localStorage.removeItem('ng_mapcalib');
+  // Effacer aussi sur HiveMQ (publish vide avec retain)
+  if (RELAY.connected && RELAY.client) {
+    RELAY.client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', '', { retain: true, qos: 1 });
+  }
+  showToast('🗑️ Calibration effacée — refais-la avec le GPS 🎯 sur le téléphone', 'orange');
 }
 
 function toggleFollowRobot() {
