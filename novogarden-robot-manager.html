@@ -1910,55 +1910,21 @@ function handleMqttMessage(topic, payload) {
     }
   }
 
-  // Chercher coordonnées GPS absolues (double IEEE754) dans tous les sous-champs
-  // Le robot RTK connaît sa position WGS84 — elle est quelque part dans le protobuf
-  function findGpsCoords(obj, depth) {
-    if (!obj || typeof obj !== 'object' || depth > 4) return null;
-    const vals = Object.values(obj).filter(v => typeof v === 'number' && isFinite(v));
-    // Chercher une paire lat/lng valide : lat ∈ [-90,90], lng ∈ [-180,180], deux valeurs distinctes
-    for (let i = 0; i < vals.length; i++) {
-      for (let j = 0; j < vals.length; j++) {
-        if (i === j) continue;
-        const a = vals[i], b = vals[j];
-        if (Math.abs(a) <= 90 && Math.abs(b) <= 180 && Math.abs(a) > 0.1 && Math.abs(b) > 0.1) {
-          return { lat: a, lng: b };
-        }
-      }
-    }
-    for (const v of Object.values(obj)) {
-      if (v && typeof v === 'object') {
-        const r = findGpsCoords(v, depth + 1);
-        if (r) return r;
-      }
-    }
-    return null;
-  }
-  const gpsAbsolute = findGpsCoords(fields, 0);
-  if (gpsAbsolute) {
-    console.log('[GPS] coordonnées RTK absolues:', gpsAbsolute);
-    updateRobotMarker(gpsAbsolute.lat, gpsAbsolute.lng);
-    const rtk = document.getElementById('rtk-txt');
-    if (rtk) rtk.textContent = `RTK ${gpsAbsolute.lat.toFixed(6)}, ${gpsAbsolute.lng.toFixed(6)}`;
-    // Calibration automatique depuis les coords RTK absolues — pas besoin d'intervention manuelle
-    if (!STATE.mapCalib || !STATE._gpsCalibFromRobot) {
-      const pos = STATE.robotLocalPos || {x: 0, y: 0};
-      STATE.mapCalib = { refLat: gpsAbsolute.lat, refLng: gpsAbsolute.lng, localX: pos.x, localY: pos.y };
-      STATE._gpsCalibFromRobot = true;
-      const calibJson = JSON.stringify(STATE.mapCalib);
-      localStorage.setItem('ng_mapcalib', calibJson);
-      if (RELAY.connected && RELAY.client) RELAY.client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', calibJson, { retain: true, qos: 1 });
-      showToast('📍 Position RTK détectée automatiquement ✅', 'green');
-      if (_map) { _userMovedMap = false; _map.setView([gpsAbsolute.lat, gpsAbsolute.lng], 19); }
-    }
-  }
-
-  // Position locale du robot depuis f12 (float32, mètres depuis la base) — fallback si pas de GPS absolu
-  if (!gpsAbsolute && fields.f12 && typeof fields.f12 === 'object') {
-    const x = fields.f12.f2, y = fields.f12.f5;
-    if (typeof x === 'number') {
-      const nx = x, ny = (typeof y === 'number' ? y : 0);
-      STATE.robotLocalPos = { x: nx, y: ny };
-      updateRobotFromLocalCoords(nx, ny);
+  // Position locale du robot : f14.f1 = Est (m), f14.f2 = Nord (m), f14.f3 = cap (rad)
+  // Confirmé par logs : ces valeurs changent continuellement quand le robot bouge
+  // f12.f2 = 22.738 est CONSTANT (référence antenne base) — ne pas utiliser pour la position
+  if (fields.f14 && typeof fields.f14 === 'object') {
+    const x = fields.f14.f1; // Est en mètres depuis la base RTK
+    const y = fields.f14.f2; // Nord en mètres depuis la base RTK
+    const hdg = fields.f14.f3; // Cap en radians (±π)
+    if (typeof x === 'number' && typeof y === 'number' && isFinite(x) && isFinite(y)) {
+      STATE.robotLocalPos = { x, y };
+      if (typeof hdg === 'number' && isFinite(hdg)) STATE.robotHeading = hdg;
+      console.log(`[POS] f14 → x=${x.toFixed(3)}m Est, y=${y.toFixed(3)}m Nord, hdg=${hdg != null ? (hdg * 180 / Math.PI).toFixed(1) : '?'}°`);
+      updateRobotFromLocalCoords(x, y);
+      // Afficher la position locale dans l'UI
+      const rtk = document.getElementById('rtk-txt');
+      if (rtk) rtk.textContent = `Local x=${x.toFixed(2)}m y=${y.toFixed(2)}m`;
     }
   }
 
@@ -3263,7 +3229,7 @@ function calibrateWithPhoneGps() {
 // Calibration manuelle : l'utilisateur clique sur la carte à l'endroit du robot
 function startMapCalibration() {
   if (!STATE.robotLocalPos) {
-    showToast('En attente de la position robot (f12)…', 'orange');
+    showToast('En attente de la position robot (f14)…', 'orange');
     return;
   }
   _mapTool = 'calibrate';
