@@ -658,6 +658,22 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
           </button>
         </div>
 
+        <!-- TEST MQTT BYTES — trouver la bonne commande START -->
+        <div id="ble-test-panel" style="background:#fff3cd;border-radius:12px;padding:12px;margin:0 16px 12px;border:2px solid #FF8C00;">
+          <div style="font-size:11px;font-weight:800;color:#856404;margin-bottom:8px;">🔬 TEST COMMANDES MQTT — Robot doit être en WAITING (f1=1)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <button onclick="testMqttRaw('EDEoAg==')" style="font-size:10px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#1a73e8;color:white;cursor:pointer;">f5=2 mowing</button>
+            <button onclick="testMqttRaw('EDEoAw==')" style="font-size:10px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#1a73e8;color:white;cursor:pointer;">f5=3 paused</button>
+            <button onclick="testMqttRaw('EDEoBA==')" style="font-size:10px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#1a73e8;color:white;cursor:pointer;">f5=4 docking</button>
+            <button onclick="testMqttRaw('EDEoEA==')" style="font-size:10px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#1a73e8;color:white;cursor:pointer;">f5=16</button>
+            <button onclick="testMqttRaw('EDEoIA==')" style="font-size:10px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#1a73e8;color:white;cursor:pointer;">f5=32</button>
+            <button onclick="testMqttRaw('EDEoFDgCSgIoAQ==')" style="font-size:10px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#808080;color:white;cursor:pointer;">original f5=20</button>
+            <button onclick="testMqttRaw('EDEoHA==')" style="font-size:10px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#e53935;color:white;cursor:pointer;">STOP f5=28</button>
+            <button onclick="testMqttRaw('EDEoE7oBBAgAIAE=')" style="font-size:10px;font-weight:700;padding:6px;border:none;border-radius:8px;background:#5a8e1e;color:white;cursor:pointer;">QUERY_MAP</button>
+          </div>
+          <div style="font-size:9px;color:#856404;margin-top:6px;">Observe si f1 change dans pboutput après chaque test. Connecte-toi au PC (mode Remote) pour envoyer via MQTT directement.</div>
+        </div>
+
         <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
           Activité récente
           <button onclick="copyActivityLogs()" style="font-size:10px;font-weight:700;background:var(--green);color:white;border:none;border-radius:8px;padding:3px 10px;cursor:pointer;">📋 Copier</button>
@@ -1876,15 +1892,19 @@ function handleMqttMessage(topic, payload) {
 // MQTT = réception statut seulement
 // ============================================================
 
-// Commandes protobuf capturées via ADB logcat
-// Format BLE : string base64 envoyée en UTF-8 sur la caractéristique write
+// Commandes BLE — bytes binaires protobuf (f2=49, f5=code)
+// Pattern: 10 31 28 XX  où XX = code action
 const CMD_B64 = {
-  START:       'EDEoFDgCSgIoAQ==',  // toggle bouton (WAITING→CLEANING)
-  PAUSE:       'EDEoFDgCSgIoAQ==',  // même toggle (CLEANING→PAUSE)
-  STOP:        'EDEoHA==',          // forceWaiting f5=28
-  DOCK:        'EDEoFDgCSgIoAQ==',  // TODO: affiner
-  QUERY_MAP:   'EDEoE7oBBAgAIAE=',
+  START:       'EDEoAg==',          // f5=2 → code "mowing" dans statut
+  PAUSE:       'EDEoAw==',          // f5=3 → code "paused" dans statut
+  STOP:        'EDEoHA==',          // f5=28 → forceWaiting (testé)
+  DOCK:        'EDEoBA==',          // f5=4 → code "docking" dans statut
+  QUERY_MAP:   'EDEoE7oBBAgAIAE=', // handshake/keepalive (confirmé)
   QUERY_DEBUG: 'EDFKAlgB',
+  // Candidats alternatifs START si f5=2 ne marche pas :
+  START_v2:    'EDEoEA==',          // f5=16
+  START_v3:    'EDEoIA==',          // f5=32
+  START_v4:    'EDEoFDgCSgIoAQ==', // original capturé (ne marchait pas)
 };
 
 const BLE_STATE = {
@@ -2283,6 +2303,33 @@ function updateDashStats() {
   const m = STATE.dailyStats.duration % 60;
   document.getElementById('stat-duration').textContent = h > 0 ? `${h}h${m.toString().padStart(2,'0')}` : `${m}min`;
   document.getElementById('stat-errors').textContent = STATE.dailyStats.errors;
+}
+
+function testMqttRaw(b64) {
+  if (!STATE.mqttConnected || !STATE.mqttClient) { showToast('MQTT non connecté — authentifie-toi d\'abord', 'red'); return; }
+  const bytes = b64ToBytes(b64);
+  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' ');
+  STATE.mqttClient.publish(CONFIG.TOPIC_PUB, JSON.stringify({ message: b64 }));
+  addActivity('🔬 MQTT TEST → robot', 'b64=' + b64 + ' hex=' + hex, false);
+  showToast('MQTT envoyé: ' + hex, 'blue');
+}
+
+async function testBleRaw(b64) {
+  if (!BLE_STATE.writeChar) { showToast('BLE non connecté', 'red'); return; }
+  const bytes = b64ToBytes(b64);
+  const hex = Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' ');
+  try {
+    if (BLE_STATE.writeChar.properties.writeWithoutResponse) {
+      await BLE_STATE.writeChar.writeValueWithoutResponse(bytes);
+    } else {
+      await BLE_STATE.writeChar.writeValueWithResponse(bytes);
+    }
+    addActivity('🔬 BLE TEST → robot', hex, false);
+    showToast('BLE envoyé: ' + hex, 'blue');
+  } catch(e) {
+    addActivity('🔬 BLE TEST erreur', e.message, false);
+    showToast('Erreur: ' + e.message, 'red');
+  }
 }
 
 function copyActivityLogs() {
