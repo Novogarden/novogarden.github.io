@@ -1895,10 +1895,10 @@ function handleMqttMessage(topic, payload) {
 // Commandes BLE — bytes binaires protobuf (f2=49, f5=code)
 // Pattern: 10 31 28 XX  où XX = code action
 const CMD_B64 = {
-  START:       'EDEoAg==',          // f5=2 → code "mowing" dans statut
-  PAUSE:       'EDEoAw==',          // f5=3 → code "paused" dans statut
+  START:       'EDEoBA==',          // f5=4 → démarre la tonte ✅ confirmé
+  PAUSE:       'EDEoAw==',          // f5=3 → pause (à confirmer)
   STOP:        'EDEoHA==',          // f5=28 → forceWaiting (testé)
-  DOCK:        'EDEoBA==',          // f5=4 → code "docking" dans statut
+  DOCK:        'EDEoAg==',          // f5=2 → retour base ✅ confirmé
   QUERY_MAP:   'EDEoE7oBBAgAIAE=', // handshake/keepalive (confirmé)
   QUERY_DEBUG: 'EDFKAlgB',
   // Candidats alternatifs START si f5=2 ne marche pas :
