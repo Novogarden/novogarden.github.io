@@ -853,9 +853,10 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         <button class="map-tool-btn" title="Saisir coordonnées GPS manuellement" onclick="promptManualCoords()" style="background:#e8eaf6;">
           <svg viewBox="0 0 24 24" style="fill:#3949ab"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
         </button>
-        <!-- Effacer calibration corrompue -->
-        <button class="map-tool-btn" title="Effacer calibration et recommencer" onclick="if(confirm('Effacer la calibration ?'))clearCalib()" style="background:#ffebee;">
+        <!-- Effacer calibration corrompue + reset France -->
+        <button class="map-tool-btn" title="Carte perdue ? → Efface calibration et revient sur la France" onclick="resetMapToFrance()" style="background:#ffebee; position:relative;">
           <svg viewBox="0 0 24 24" style="fill:#b71c1c"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm2.46-7.12l1.41-1.41L12 12.59l2.12-2.12 1.41 1.41L13.41 14l2.12 2.12-1.41 1.41L12 15.41l-2.12 2.12-1.41-1.41L10.59 14l-2.13-2.12zM15.5 4l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          <span style="position:absolute;bottom:2px;right:3px;font-size:7px;font-weight:900;color:#b71c1c;">FR</span>
         </button>
         <!-- Calibration GPS automatique (téléphone à côté du robot) -->
         <button class="map-tool-btn" id="tool-calibrate-auto" title="Je suis à côté du robot — utiliser mon GPS" onclick="calibrateWithPhoneGps()" style="background:#e3f2fd;">
@@ -1910,6 +1911,45 @@ function handleMqttMessage(topic, payload) {
     }
   }
 
+  // Codes d'erreur Lymow — logués dans la console pour identifier le champ exact
+  // Connus : E16 (limite), E19 (RTK faible), E27 (pas de zone), E68 (obstacle/bloqué)
+  const ERROR_MAP = {
+    16: 'E16 — Limite de zone introuvable (calibration RTK manquante ?)',
+    19: 'E19 — Signal RTK insuffisant',
+    27: 'E27 — Aucune zone de tonte disponible — configurez une zone',
+    68: 'E68 — Obstacle détecté ou robot bloqué',
+    20: 'E20 — Erreur capteur',
+    30: 'E30 — Démarrage impossible',
+    40: 'E40 — Erreur moteur',
+    50: 'E50 — Erreur lame',
+  };
+  // Chercher code erreur dans f5.f3, f5.f4, f6.f1, f7 (champs connus pour les erreurs)
+  let errCode = null;
+  const f5 = fields.f5;
+  if (f5 && typeof f5 === 'object') {
+    for (const k of ['f3','f4','f5','f6']) {
+      if (f5[k] != null && typeof f5[k] === 'number' && f5[k] > 0 && ERROR_MAP[f5[k]]) {
+        errCode = f5[k]; break;
+      }
+    }
+  }
+  if (!errCode && fields.f6 != null && typeof fields.f6 === 'number' && ERROR_MAP[fields.f6]) errCode = fields.f6;
+  if (!errCode && fields.f7 != null && typeof fields.f7 === 'number' && ERROR_MAP[fields.f7]) errCode = fields.f7;
+  // Logguer tous les champs f5 inconnus pour identifier le champ erreur
+  if (f5 && typeof f5 === 'object') {
+    const unknown = Object.entries(f5).filter(([k,v]) => !['f1','f2'].includes(k) && v !== 0 && v != null);
+    if (unknown.length) console.log('[ERR-SCAN] f5 champs inconnus:', Object.fromEntries(unknown));
+  }
+  if (errCode) {
+    const msg = ERROR_MAP[errCode] || `E${errCode} — Erreur robot`;
+    console.warn('[ERREUR ROBOT]', msg);
+    showToast('⚠️ ' + msg, 'red');
+    addActivity('⚠️ Erreur', msg, true);
+    updateRobotStatus('error');
+    const errEl = document.getElementById('error-txt');
+    if (errEl) errEl.textContent = `E${errCode}`;
+  }
+
   // Position locale du robot : f14.f1 = Est (m), f14.f2 = Nord (m), f14.f3 = cap (rad)
   // Confirmé par logs : ces valeurs changent continuellement quand le robot bouge
   // f12.f2 = 22.738 est CONSTANT (référence antenne base) — ne pas utiliser pour la position
@@ -1943,6 +1983,7 @@ function handleMqttMessage(topic, payload) {
       relayMsg.y = STATE.robotLocalPos.y;
       if (STATE.robotHeading != null) relayMsg.hdg = STATE.robotHeading;
     }
+    if (errCode) relayMsg.errCode = errCode;
     if (Object.keys(relayMsg).length > 0) {
       RELAY.client.publish(CONFIG.RELAY_TOPIC_STATUS, JSON.stringify(relayMsg));
     }
@@ -2271,6 +2312,11 @@ function connectRelay() {
           const rtk = document.getElementById('rtk-txt');
           if (rtk) rtk.textContent = `Local x=${s.x.toFixed(2)}m y=${s.y.toFixed(2)}m`;
         }
+        if (s.errCode) {
+          const ERROR_MAP = {16:'E16 — Limite zone',19:'E19 — RTK faible',27:'E27 — Aucune zone',68:'E68 — Obstacle'};
+          showToast('⚠️ ' + (ERROR_MAP[s.errCode] || `E${s.errCode}`), 'red');
+          addActivity('⚠️ Erreur robot', ERROR_MAP[s.errCode] || `E${s.errCode}`, true);
+        }
       } catch(e) {}
     }
   });
@@ -2314,19 +2360,11 @@ async function sendCommand(cmd, params = {}) {
   const labels = { START:'Démarrage', STOP:'Arrêt', DOCK:'Retour base', PAUSE:'Pause', EDGE:'Tonte bords', SPOT:'Tonte spot' };
 
   if (RELAY.mode === 'remote') {
-    const b64direct = CMD_B64[cmd];
-    // Priorité : publish direct AWS IoT si connecté (credentials authentifiés)
-    if (STATE.mqttConnected && b64direct) {
-      STATE.mqttClient.publish(CONFIG.TOPIC_PUB, JSON.stringify({ message: b64direct }));
-      console.log('[MQTT] cmd directe:', cmd, b64direct);
-      showToast(labels[cmd] || cmd, 'green');
-      addActivity(`Commande MQTT: ${labels[cmd] || cmd}`, cmd, false);
-      return;
-    }
-    // Fallback : relais HiveMQ → téléphone Gateway
-    if (!RELAY.connected) { showToast('Relais non connecté', 'red'); return; }
+    // TOUJOURS passer par le relais HiveMQ → téléphone Gateway → BLE
+    // (le robot Lymow n'accepte les commandes QUE via BLE, pas via MQTT pbinput)
+    if (!RELAY.connected) { showToast('Relais HiveMQ non connecté — téléphone requis', 'red'); return; }
     RELAY.client.publish(CONFIG.RELAY_TOPIC_CMD, cmd);
-    console.log('[RELAY] cmd envoyée:', cmd);
+    console.log('[RELAY] cmd → Gateway → BLE:', cmd);
     showToast(labels[cmd] || cmd, 'green');
     addActivity(`Commande relais: ${labels[cmd] || cmd}`, cmd, false);
     return;
@@ -2929,19 +2967,35 @@ function initMap() {
   // Centrage initial : calibration valide > dernière position > France par défaut
   const calib = STATE.mapCalib || JSON.parse(localStorage.getItem('ng_mapcalib') || 'null');
   const calibValid = calib && calib.refLat && Math.abs(calib.refLat) <= 90 && Math.abs(calib.refLng) <= 180;
-  if (calibValid) {
+  // Détecter calibration hors Europe (probablement corrompue)
+  const calibInEurope = calibValid && calib.refLat >= 35 && calib.refLat <= 72 && calib.refLng >= -15 && calib.refLng <= 45;
+  if (calibValid && calibInEurope) {
     STATE.mapCalib = calib;
     _map.setView([calib.refLat, calib.refLng], 19);
   } else {
-    if (calib && !calibValid) {
+    if (calib && calibValid && !calibInEurope) {
+      console.warn('[MAP] calibration hors Europe ignorée — reset:', calib);
+      STATE.mapCalib = null;
+      localStorage.removeItem('ng_mapcalib');
+      localStorage.removeItem('ng_map_center');
+      showToast('⚠️ Calibration hors Europe effacée — utilise 📍 GPS pour recalibrer', 'orange');
+    } else if (calib && !calibValid) {
       console.warn('[MAP] calibration invalide ignorée:', calib);
       STATE.mapCalib = null;
       localStorage.removeItem('ng_mapcalib');
     }
     const lastPos = localStorage.getItem('ng_map_center');
     if (lastPos) {
-      const [lat,lng,z] = JSON.parse(lastPos);
-      _map.setView([lat,lng], z);
+      try {
+        const [lat,lng,z] = JSON.parse(lastPos);
+        // Vérifier que la dernière position est aussi en Europe
+        if (lat >= 35 && lat <= 72 && lng >= -15 && lng <= 45) {
+          _map.setView([lat,lng], z);
+        } else {
+          localStorage.removeItem('ng_map_center');
+          _map.setView([46.5,2.5], 6);
+        }
+      } catch(e) { _map.setView([46.5,2.5], 6); }
     } else {
       _map.setView([46.5,2.5], 6);
     }
@@ -3152,13 +3206,20 @@ function clearCalib() {
   STATE.mapCalib = null;
   STATE._mapCenteredOnCalib = false;
   localStorage.removeItem('ng_mapcalib');
+  localStorage.removeItem('ng_map_center'); // effacer aussi la dernière position sauvegardée
   // Effacer le retain HiveMQ (publish payload vide = supprime le retained message)
   if (RELAY.connected && RELAY.client) {
     RELAY.client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', '', { retain: true, qos: 1 });
-    showToast('🗑️ Calibration effacée partout — le robot se placera auto dès qu\'il bouge', 'orange');
-  } else {
-    showToast('🗑️ Calibration locale effacée (relay non connecté — reconnecte-toi pour effacer HiveMQ)', 'orange');
   }
+  // Recentrer la carte sur la France
+  if (_map) { _map.setView([46.5, 2.5], 6); }
+  showToast('🗑️ Calibration effacée — utilise 📍 GPS sur le téléphone pour recalibrer', 'orange');
+}
+
+// Réinitialisation d'urgence : efface tout et revient sur la France
+function resetMapToFrance() {
+  clearCalib();
+  showToast('🗺️ Carte réinitialisée sur la France', 'green');
 }
 
 function toggleFollowRobot() {
