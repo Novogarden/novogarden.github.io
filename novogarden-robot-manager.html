@@ -849,6 +849,10 @@ html, body { width:100%; height:100%; background:#e0e0e0; font-family:'Montserra
         <button class="map-tool-btn" title="Aller à la position calibrée" onclick="goToCalib()" style="background:#fce4ec;">
           <svg viewBox="0 0 24 24" style="fill:#c62828"><path d="M21 3L3 10.53v.98l6.84 2.65L12.48 21h.98L21 3z"/></svg>
         </button>
+        <!-- Saisie manuelle coordonnées -->
+        <button class="map-tool-btn" title="Saisir coordonnées GPS manuellement" onclick="promptManualCoords()" style="background:#e8eaf6;">
+          <svg viewBox="0 0 24 24" style="fill:#3949ab"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+        </button>
         <!-- Effacer calibration corrompue -->
         <button class="map-tool-btn" title="Effacer calibration et recommencer" onclick="if(confirm('Effacer la calibration ?'))clearCalib()" style="background:#ffebee;">
           <svg viewBox="0 0 24 24" style="fill:#b71c1c"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zm2.46-7.12l1.41-1.41L12 12.59l2.12-2.12 1.41 1.41L13.41 14l2.12 2.12-1.41 1.41L12 15.41l-2.12 2.12-1.41-1.41L10.59 14l-2.13-2.12zM15.5 4l-1-1h-5l-1 1H5v2h14V4z"/></svg>
@@ -3125,6 +3129,25 @@ function goToCalib() {
   _userMovedMap = false;
   _map.setView([calib.refLat, calib.refLng], 19);
   showToast(`📍 ${calib.refLat.toFixed(5)}, ${calib.refLng.toFixed(5)}`, 'green');
+}
+
+function promptManualCoords() {
+  const input = prompt('Colle les coordonnées GPS du robot\n(format: 48.123456, 2.345678\nou copie depuis Google Maps clic droit)');
+  if (!input) return;
+  // Accepte "48.123, 2.456" ou "48.123456,2.456789"
+  const match = input.trim().match(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/);
+  if (!match) { showToast('Format invalide — exemple: 48.1234, 2.5678', 'red'); return; }
+  const lat = parseFloat(match[1]), lng = parseFloat(match[2]);
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) { showToast('Coordonnées invalides', 'red'); return; }
+  const pos = STATE.robotLocalPos || {x: 0, y: 0};
+  STATE.mapCalib = { refLat: lat, refLng: lng, localX: pos.x, localY: pos.y };
+  const calibJson = JSON.stringify(STATE.mapCalib);
+  localStorage.setItem('ng_mapcalib', calibJson);
+  STATE._mapCenteredOnCalib = false;
+  if (RELAY.connected && RELAY.client) RELAY.client.publish('novogarden/' + CONFIG.ROBOT_SERIAL + '/calib', calibJson, { retain: true, qos: 1 });
+  _userMovedMap = false;
+  if (_map) _map.setView([lat, lng], 19);
+  showToast(`✅ Position définie : ${lat.toFixed(5)}, ${lng.toFixed(5)}`, 'green');
 }
 
 function clearCalib() {
