@@ -109,6 +109,10 @@ th:first-child,td:first-child{text-align:left}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted)}
 .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin-right:4px}
 .leaflet-container{font-family:var(--f-body)}
+.base-handle{background:transparent;border:0}
+.base-handle div{transform:translate(-50%,-100%);display:inline-flex;align-items:center;gap:5px;white-space:nowrap;background:rgba(0,0,0,.78);color:#fff;font:600 11px var(--f-mono);padding:4px 8px;border-radius:6px;border:2px solid #fff;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.base-handle div::after{content:"";position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);border:6px solid transparent;border-top-color:#fff;border-bottom:0}
+.base-handle.dragging div{background:var(--accent);cursor:grabbing}
 .parcel-tip{font-family:var(--f-mono);font-size:12px}
 [hidden]{display:none!important}
 </style>
@@ -174,6 +178,11 @@ th:first-child,td:first-child{text-align:left}
         <div id="angles" style="display:flex;flex-direction:column;gap:8px"><p class="hint">Sens de tonte : disponible une fois le terrain tracé.</p></div>
         <button class="btn ghost small" type="button" id="autoAngle">Sens optimal (moins de demi-tours)</button>
       </div>
+      <div class="field">
+        <label for="cross">Tonte croisée</label>
+        <select id="cross"><option value="off">Désactivée : chaque robot sa part</option><option value="90">Croisée à 90° : 2 passages superposés</option><option value="45">Croisée à 45° : 2 passages superposés</option></select>
+        <p class="hint" id="crossHint" hidden>La moitié des robots tond tout le terrain dans le sens réglé, l'autre moitié repasse partout en travers, en partant de l'autre bout. Avec 1 robot, il enchaîne les deux passages.</p>
+      </div>
       <div class="row2">
         <div class="field"><label for="speed">Vitesse <span class="u">m/s</span></label><input type="number" id="speed" min="0.3" max="1" step="0.05" value="0.6"></div>
         <div class="field"><label for="overlap">Recouvrement <span class="u">%</span></label><input type="number" id="overlap" min="0" max="50" step="5" value="10"></div>
@@ -227,7 +236,7 @@ th:first-child,td:first-child{text-align:left}
       <div class="gantt" id="gantt"></div>
       <div class="legend">
         <span><i style="background:var(--mow1)"></i>Tondu</span><span><i style="background:var(--charge)"></i>Recharge</span><span><i style="background:var(--travel)"></i>Trajet base</span>
-        <span>Traits fins : prochaines bandes · BASE : bornes de charge communes · rouge : zone d'exclusion</span>
+        <span>Traits fins : prochaines bandes · BASE : bornes de charge (à faire glisser) · rouge : zone d'exclusion</span>
       </div>
     </div>
   </div>
@@ -315,7 +324,7 @@ async function fetchParcel(latlng){
 function startParcel(kind){parcelMode=kind;if(!map.hasLayer(cada))cada.addTo(map);map.getContainer().style.cursor='crosshair';
   mode(kind==='add'?'Clique la parcelle voisine à ajouter. Elle est fusionnée si elle touche le terrain.':kind==='zone'?'Clique la parcelle de l\u2019autre zone de tonte (elle peut être séparée de la première).':'Clique dans la parcelle à tondre.')}
 let baseMode=false;
-$('baseBtn').onclick=()=>{parcelMode=null;baseMode=true;map.getContainer().style.cursor='crosshair';mode('Clique l\u2019endroit des bornes de charge : elles se posent sur le bord de pelouse le plus proche. Tous les robots y partagent la même base.')};
+$('baseBtn').onclick=()=>{parcelMode=null;baseMode=true;map.getContainer().style.cursor='crosshair';mode('Clique l\u2019endroit des bornes de charge, ou fais glisser l\u2019étiquette BASE sur la carte : elle suit le bord de pelouse le plus proche.')};
 map.on('click',e=>{if(!baseMode||!cur.outer)return;baseMode=false;map.getContainer().style.cursor='';const g=geo();
   cur.base=O.toLL(snapAny(O.toM([e.latlng.lat,e.latlng.lng]),g.outers));mode(cur.id?'Base de charge déplacée. Clique « Mettre à jour » pour la garder.':'Base de charge placée.');changed()});
 map.on('click',async e=>{if(!parcelMode)return;const kind=parcelMode;parcelMode=null;map.getContainer().style.cursor='';mode('Recherche de la parcelle…');
@@ -382,10 +391,10 @@ $('importFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{co
 let N=2;const rb=$('robots');
 for(let i=1;i<=8;i++){const b=document.createElement('button');b.type='button';b.textContent=i;b.onclick=()=>{setN(i);changed(true)};rb.appendChild(b)}
 function setN(i){N=i;[...rb.children].forEach((c,k)=>c.setAttribute('aria-pressed',k+1===N));$('nOut').textContent=N}setN(2);
-const KEYS=['speed','overlap','runtime','reserve','charger','recharge','turn','travel','start','win'];
+const KEYS=['cross','speed','overlap','runtime','reserve','charger','recharge','turn','travel','start','win'];
 function readSettings(){const s={robots:N,angles:angles.slice()};KEYS.forEach(k=>s[k]=k==='charger'?$(k).value:num(k));return s}
 function applySettings(s){KEYS.forEach(k=>{if(s[k]!=null)$(k).value=s[k]});if(s.robots)setN(s.robots);angles=Array.isArray(s.angles)?s.angles.slice():(s.angle!=null?[s.angle]:[])}
-KEYS.forEach(k=>$(k).addEventListener('input',()=>changed()));
+KEYS.forEach(k=>$(k).addEventListener(k==='cross'?'change':'input',()=>changed(true)));
 $('charger').addEventListener('change',()=>{$('recharge').value=$('charger').value==='10'?100:190;changed()});
 // un sens de tonte par zone (comme dans l'appli Lymow) ; une nouvelle zone reçoit son sens optimal
 function syncAngles(g){if(!g.outer){angles=[];return}g.zones.forEach((z,k)=>{if(angles[k]==null)angles[k]=bestAngle(z.rings)});angles.length=g.zones.length}
@@ -451,38 +460,51 @@ function cellsOf(lanes){const cells=[];let prevL=[];const ov=(p,q)=>Math.min(p.x
       if(c.cell<0){c.cell=cells.length;cells.push({lanes:[]})}cells[c.cell].lanes.push({li,y:l.y,x0:c.x0,x1:c.x1})});
     prevL=cur});return cells}
 
-function buildPlan(G,base){
-  const ew=CUT*(1-Math.min(50,num('overlap'))/100),v=Math.min(1,Math.max(0.3,num('speed'))),turn=num('turn');
-  const nav=makeNav(G.rings);let total=0,liOff=0;const cells=[];
-  // bandes et cellules de chaque zone, chacune avec son propre sens de tonte (coordonnées remises dans le repère du terrain)
-  G.zones.forEach((z,k)=>{const a=(angles[k]||0)*Math.PI/180;const {lanes}=lanesOf(z.rings,a,ew);lanes.forEach(l=>total+=l.len);
-    cellsOf(lanes).forEach(cl=>cells.push({lanes:cl.lanes.map(ln=>({li:liOff+ln.li,len:ln.x1-ln.x0,P0:unrot([ln.x0,ln.y],a),P1:unrot([ln.x1,ln.y],a)}))}));
+// suite ordonnée de bandes pour un passage complet du terrain, décalé de « off » degrés par rapport au sens de chaque zone
+function passSeq(G,nav,ew,off,start,idOff){let total=0,liOff=0;const cells=[];
+  G.zones.forEach((z,k)=>{const a=((angles[k]||0)+off)*Math.PI/180;const {lanes}=lanesOf(z.rings,a,ew);lanes.forEach(l=>total+=l.len);
+    cellsOf(lanes).forEach(cl=>cells.push({lanes:cl.lanes.map(ln=>({li:idOff+liOff+ln.li,len:ln.x1-ln.x0,P0:unrot([ln.x0,ln.y],a),P1:unrot([ln.x1,ln.y],a)}))}));
     liOff+=lanes.length});
-  // ordre de tonte : cellule par cellule, en allant chaque fois vers la plus proche (en partant de la base)
-  const used=new Uint8Array(cells.length),seq=[];let pos=base||null;
+  // ordre de tonte : cellule par cellule, en allant chaque fois vers la plus proche
+  const used=new Uint8Array(cells.length),seq=[];let pos=start||null;
   for(let c=0;c<cells.length;c++){let bi=-1,bopt=null,bd=Infinity;
     cells.forEach((cl,i)=>{if(used[i])return;const f=cl.lanes[0],l=cl.lanes[cl.lanes.length-1];
       [[false,false,f.P0],[false,true,f.P1],[true,false,l.P0],[true,true,l.P1]].forEach(o=>{
         const d=pos?Math.hypot(o[2][0]-pos[0],o[2][1]-pos[1]):(o[0]||o[1]?1:0);if(d<bd){bd=d;bi=i;bopt=o}})});
     used[bi]=1;const L=bopt[0]?[...cells[bi].lanes].reverse():cells[bi].lanes;let right=bopt[1];
-    L.forEach(ln=>{const A=right?ln.P1:ln.P0,B=right?ln.P0:ln.P1;seq.push({cell:bi,li:ln.li,A,B,len:ln.len});right=!right;pos=B})}
-  // partage entre robots : morceaux consécutifs de même DURÉE (coupe + demi-tours), pas seulement de même surface
-  const cost=s=>s.len/v+turn,totT=seq.reduce((a,s)=>a+cost(s),0);
-  const n=Math.max(1,Math.min(N,seq.length));const chunks=[];let cum=0,startI=0;
+    L.forEach(ln=>{const A=right?ln.P1:ln.P0,B=right?ln.P0:ln.P1;seq.push({cell:idOff+bi,li:ln.li,A,B,len:ln.len});right=!right;pos=B})}
+  return {seq,total}}
+// partage entre robots : morceaux consécutifs de même DURÉE (coupe + demi-tours)
+function splitSeq(seq,n,v,turn){const cost=s=>s.len/v+turn,totT=seq.reduce((a,s)=>a+cost(s),0);
+  n=Math.max(1,Math.min(n,seq.length));const chunks=[];let cum=0,startI=0;
   seq.forEach((s,i)=>{cum+=cost(s);if(chunks.length<n-1&&cum>=totT*(chunks.length+1)/n&&i+1<seq.length){chunks.push(seq.slice(startI,i+1));startI=i+1}});
-  chunks.push(seq.slice(startI));
-  const zones=chunks.map(ch=>{const segs=[];let t=0,prev=null,len=0,cx=0,cy=0;const lanesSet=new Set();
-    ch.forEach(s=>{const A=s.A,B=s.B;let pre=null;
-      if(prev){const adj=prev.cell===s.cell&&Math.abs(prev.li-s.li)===1;
-        const P=adj&&nav.vis(prev.Bw,A)?[prev.Bw,A]:nav.route(prev.Bw,A);if(P.length>2)pre=P;t+=plen(P)/v+turn}
-      segs.push({lane:s.li,a:A,b:B,t0:t,t1:t+s.len/v,pre});t+=s.len/v;len+=s.len;cx+=(A[0]+B[0])/2*s.len;cy+=(A[1]+B[1])/2*s.len;lanesSet.add(s.li);
-      prev={cell:s.cell,li:s.li,Bw:B}});
-    let label=len?[cx/len,cy/len]:[0,0];
-    // étiquette posée sur une bande de la zone si le barycentre tombe hors du terrain
-    if(segs.length&&!nav.vis(label,label.map(x=>x+0.001))){const m=segs[Math.floor(segs.length/2)];label=[(m.a[0]+m.b[0])/2,(m.a[1]+m.b[1])/2]}
-    return {segs,T:t,len,area:len*ew,lanes:lanesSet.size,label}});
+  chunks.push(seq.slice(startI));return chunks}
+function mkZone(ch,nav,v,turn,ew){const segs=[];let t=0,prev=null,len=0,cx=0,cy=0;const lanesSet=new Set();
+  ch.forEach(s=>{const A=s.A,B=s.B;let pre=null;
+    if(prev){const adj=prev.cell===s.cell&&Math.abs(prev.li-s.li)===1;
+      const P=adj&&nav.vis(prev.Bw,A)?[prev.Bw,A]:nav.route(prev.Bw,A);if(P.length>2)pre=P;t+=plen(P)/v+turn}
+    segs.push({lane:s.li,a:A,b:B,t0:t,t1:t+s.len/v,pre});t+=s.len/v;len+=s.len;cx+=(A[0]+B[0])/2*s.len;cy+=(A[1]+B[1])/2*s.len;lanesSet.add(s.li);
+    prev={cell:s.cell,li:s.li,Bw:B}});
+  let label=len?[cx/len,cy/len]:[0,0];
+  // étiquette posée sur une bande de la zone si le barycentre tombe hors du terrain
+  if(segs.length&&!nav.vis(label,label.map(x=>x+0.001))){const m=segs[Math.floor(segs.length/2)];label=[(m.a[0]+m.b[0])/2,(m.a[1]+m.b[1])/2]}
+  return {segs,T:t,len,area:len*ew,lanes:lanesSet.size,label}}
+function buildPlan(G,base){
+  const ew=CUT*(1-Math.min(50,num('overlap'))/100),v=Math.min(1,Math.max(0.3,num('speed'))),turn=num('turn');
+  const nav=makeNav(G.rings),crossV=$('cross').value,cross=crossV!=='off';
+  const start0=base||null;
+  const p1=passSeq(G,nav,ew,0,start0,0);let zones;
+  if(!cross){zones=splitSeq(p1.seq,N,v,turn).map(ch=>Object.assign(mkZone(ch,nav,v,turn,ew),{pass:0}))}
+  else{
+    // le passage croisé démarre à l'autre bout du terrain (point du contour le plus éloigné du départ du 1er passage)
+    const ref=start0||(p1.seq[0]&&p1.seq[0].A)||G.outer[0];let far=G.outer[0],fd=-1;G.outers.flat().forEach(q=>{const d=Math.hypot(q[0]-ref[0],q[1]-ref[1]);if(d>fd){fd=d;far=q}});
+    const p2=passSeq(G,nav,ew,+crossV,far,1e6);
+    if(N===1){zones=[Object.assign(mkZone(p1.seq.concat(p2.seq),nav,v,turn,ew),{pass:-1})]}
+    else{const n1=Math.ceil(N/2),n2=N-n1;
+      zones=splitSeq(p1.seq,n1,v,turn).map(ch=>Object.assign(mkZone(ch,nav,v,turn,ew),{pass:0}))
+        .concat(splitSeq(p2.seq,n2,v,turn).map(ch=>Object.assign(mkZone(ch,nav,v,turn,ew),{pass:1})))}}
   const B=base||(zones[0]&&zones[0].segs.length?zones[0].segs[0].a:G.rings[0][0]);zones.forEach(z=>z.dock=B);
-  return {zones,ew,total,nav,cells:cells.length,base:B,v}}
+  return {zones,ew,total:p1.total,nav,base:B,v,cross}}
 function schedule(plan){
   const dockMin=Math.max(0,num('travel')),runtime=Math.max(20,num('runtime')),reserve=Math.min(60,Math.max(0,num('reserve'))),recharge=Math.max(1,num('recharge'));
   const usable=runtime*(1-reserve/100),drain=(100-reserve)/usable,B=plan.base,v=plan.v;
@@ -508,12 +530,26 @@ function posAt(z,tz){const S=z.segs;if(!S.length)return z.dock;let lo=0,hi=S.len
   const s=S[lo];if(tz>=s.t0){const f=(tz-s.t0)/Math.max(1e-9,s.t1-s.t0);return [s.a[0]+(s.b[0]-s.a[0])*f,s.a[1]+(s.b[1]-s.a[1])*f]}
   const p=lo>0?S[lo-1]:null;if(!p)return s.a;const f=(tz-p.t1)/Math.max(1e-9,s.t0-p.t1);if(s.pre)return alongP(s.pre,f);return [p.b[0]+(s.a[0]-p.b[0])*f,p.b[1]+(s.a[1]-p.b[1])*f]}
 
+// ---------- base de charge déplaçable : on la saisit et on la fait glisser, elle suit le bord de la pelouse ----------
+let baseMk=null,dragging=false;
+function syncBaseMarker(){if(!plan||!O){if(baseMk){map.removeLayer(baseMk);baseMk=null}return}
+  const ll=O.toLL(plan.base);
+  if(!baseMk){baseMk=L.marker(ll,{draggable:true,autoPan:true,zIndexOffset:1000,keyboard:false,
+      icon:L.divIcon({className:'base-handle',html:'<div>⠿ BASE</div>',iconSize:[0,0],iconAnchor:[0,14]})}).addTo(map);
+    baseMk.bindTooltip('Maintiens et fais glisser pour déplacer la base le long du bord',{direction:'top',offset:[0,-34]});
+    baseMk.on('dragstart',()=>{dragging=true;playing=false;$('play').textContent='Lancer';baseMk.getElement().classList.add('dragging')});
+    baseMk.on('drag',e=>{const g=G||geo();const q=snapAny(O.toM([e.latlng.lat,e.latlng.lng]),g.outers);const sl=O.toLL(q);
+      baseMk.setLatLng(sl);plan.base=q;plan.zones.forEach(z=>z.dock=q);draw()});
+    baseMk.on('dragend',()=>{dragging=false;baseMk.getElement().classList.remove('dragging');const q=baseMk.getLatLng();cur.base=[q.lat,q.lng];
+      mode(cur.id?'Base déplacée. Clique « Mettre à jour » pour la garder.':'Base déplacée.');changed(true)})}
+  else if(!dragging)baseMk.setLatLng(ll)}
+
 // ---------- simulation ----------
 let plan=null,sim=null,G=null,tNow=0,playing=false,lastTs=0,ct=null;
 function changed(reset){renderTerrain();clearTimeout(ct);ct=setTimeout(()=>recompute(reset),60)}
 function recompute(reset){G=geo();
-  if(!G.outer||G.area<5){plan=sim=null;if(!G.outer){angles=[];$('angles').dataset.key='';renderAngles(G)}$('results').hidden=true;$('gantt').innerHTML='<p class="hint">Choisis ou dessine un terrain pour lancer la simulation.</p>';$('clock').textContent='--:--';draw();return}
-  syncAngles(G);renderAngles(G);plan=buildPlan(G,G.base);sim=schedule(plan);if(reset)tNow=0;tNow=Math.min(tNow,sim.makespan);$('t').value=Math.round(tNow/sim.makespan*1000);
+  if(!G.outer||G.area<5){plan=sim=null;syncBaseMarker();if(!G.outer){angles=[];$('angles').dataset.key='';renderAngles(G)}$('results').hidden=true;$('gantt').innerHTML='<p class="hint">Choisis ou dessine un terrain pour lancer la simulation.</p>';$('clock').textContent='--:--';draw();return}
+  syncAngles(G);renderAngles(G);$('crossHint').hidden=$('cross').value==='off';plan=buildPlan(G,G.base);sim=schedule(plan);syncBaseMarker();if(reset)tNow=0;tNow=Math.min(tNow,sim.makespan);$('t').value=Math.round(tNow/sim.makespan*1000);
   $('results').hidden=false;renderStatic();renderDynamic()}
 function k_o(){const o=map.latLngToContainerPoint([O.lat0,O.lon0]);const c=Math.cos(O.lat0*Math.PI/180);const e=map.latLngToContainerPoint([O.lat0,O.lon0+100/(111320*c)]);return {o,k:(e.x-o.x)/100}}
 function draw(){const d=window.devicePixelRatio||1;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,ov.width,ov.height);if(!plan||!sim||!O)return;
@@ -521,23 +557,23 @@ function draw(){const d=window.devicePixelRatio||1;ctx.setTransform(1,0,0,1,0,0)
   ctx.setTransform(d*k,0,0,d*k,d*o.x,d*o.y);
   const ring=r=>{r.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath()};
   ctx.save();ctx.beginPath();G.rings.forEach(ring);ctx.clip('evenodd');ctx.lineCap='butt';
-  const ew=plan.ew,band=Math.max(1,Math.ceil(8/(ew*k))),thin=Math.max(1,Math.ceil(10/(ew*k)));const m1=css('--mow1'),m2=css('--mow2');
+  const ew=plan.ew,band=Math.max(1,Math.ceil(8/(ew*k))),thin=Math.max(1,Math.ceil(10/(ew*k)));const m1=css('--mow1'),m2=css('--mow2'),c1='#6fae3c',c2='#c3e58f';
   plan.zones.forEach((z,i)=>{const st=stateAt(sim.robots[i],tNow),tz=st.doneMin*60;
     ctx.strokeStyle=COLORS[i];ctx.globalAlpha=.22;ctx.lineWidth=ew*1.05;ctx.beginPath();z.segs.forEach(s=>{if(s.t1>tz){ctx.moveTo(s.a[0],s.a[1]);ctx.lineTo(s.b[0],s.b[1])}});ctx.stroke();
-    ctx.globalAlpha=.78;for(const par of [0,1]){ctx.strokeStyle=par?m2:m1;ctx.beginPath();
+    ctx.globalAlpha=.78;for(const par of [0,1]){ctx.beginPath();
       for(const s of z.segs){if(s.t0>=tz)break;if(Math.floor(s.lane/band)%2!==par)continue;const f=Math.min(1,(tz-s.t0)/Math.max(1e-9,s.t1-s.t0));
-        ctx.moveTo(s.a[0],s.a[1]);ctx.lineTo(s.a[0]+(s.b[0]-s.a[0])*f,s.a[1]+(s.b[1]-s.a[1])*f)}ctx.stroke()}
+        ctx.moveTo(s.a[0],s.a[1]);ctx.lineTo(s.a[0]+(s.b[0]-s.a[0])*f,s.a[1]+(s.b[1]-s.a[1])*f)}ctx.strokeStyle=par?m2:m1;ctx.stroke()}
+    if(plan.cross){ctx.globalAlpha=.55;for(const par of [0,1]){ctx.beginPath();for(const s of z.segs){if(s.t0>=tz)break;if(s.lane<1e6||Math.floor(s.lane/band)%2!==par)continue;const f=Math.min(1,(tz-s.t0)/Math.max(1e-9,s.t1-s.t0));ctx.moveTo(s.a[0],s.a[1]);ctx.lineTo(s.a[0]+(s.b[0]-s.a[0])*f,s.a[1]+(s.b[1]-s.a[1])*f)}ctx.strokeStyle=par?c2:c1;ctx.stroke()}}
     ctx.globalAlpha=.85;ctx.strokeStyle=COLORS[i];ctx.lineWidth=1/k;ctx.beginPath();
     for(const s of z.segs){if(s.t1<=tz||s.lane%thin)continue;ctx.moveTo(s.a[0],s.a[1]);ctx.lineTo(s.b[0],s.b[1])}ctx.stroke()});
   ctx.restore();ctx.globalAlpha=1;
   ctx.setTransform(d,0,0,d,0,0);
   // base de charge commune : une borne par robot, côte à côte
   const nb=plan.zones.length,Bs=toS(plan.base),gap=20,slots=plan.zones.map((z,i)=>[Bs[0]+(i-(nb-1)/2)*gap,Bs[1]]);
-  ctx.fillStyle='rgba(0,0,0,.7)';ctx.fillRect(Bs[0]-nb*gap/2-6,Bs[1]-30,nb*gap+12,42);
-  ctx.font='600 10px "JetBrains Mono", monospace';ctx.fillStyle='#fff';const bl='BASE';ctx.fillText(bl,Bs[0]-ctx.measureText(bl).width/2,Bs[1]-17);
+  ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(Bs[0]-nb*gap/2-4,Bs[1]-11,nb*gap+8,22);
   slots.forEach((q,i)=>{ctx.fillStyle='#fff';ctx.strokeStyle=COLORS[i];ctx.lineWidth=2.5;ctx.fillRect(q[0]-7,q[1]-7,14,14);ctx.strokeRect(q[0]-7,q[1]-7,14,14)});
   plan.zones.forEach((z,i)=>{const st=stateAt(sim.robots[i],tNow);
-    const L=toS(z.label);ctx.font='600 12px "JetBrains Mono", monospace';const lab='R'+(i+1)+' · '+fmt(z.area)+' m²';const tw=ctx.measureText(lab).width;
+    const L=toS(z.label);if(z.pass===1)L[1]+=24;ctx.font='600 12px "JetBrains Mono", monospace';const lab='R'+(i+1)+(plan.cross?(z.pass===-1?' · 2 passages':' · passage '+(z.pass+1)):'')+' · '+fmt(z.area)+' m²';const tw=ctx.measureText(lab).width;
     ctx.fillStyle='rgba(0,0,0,.65)';ctx.fillRect(L[0]-tw/2-6,L[1]-11,tw+12,21);ctx.fillStyle='#fff';ctx.fillText(lab,L[0]-tw/2,L[1]+4);
     const D=slots[i];
     let p;if(st.type==='mow')p=toS(posAt(z,st.doneMin*60));else if(st.type==='travel'){const Rs=st.seg.route.map(toS);Rs[0]=D;p=alongP(Rs,st.dir==='out'?st.p:1-st.p)}else p=D;
@@ -547,7 +583,7 @@ function draw(){const d=window.devicePixelRatio||1;ctx.setTransform(1,0,0,1,0,0)
 const lbl=t=>({mow:'Tonte',charge:'Recharge',travel:'Trajet base'})[t];
 const kpi=(v,l,s)=>'<div class="kpi"><span>'+l+'</span><b>'+v+'</b><small>'+s+'</small></div>';
 function renderStatic(){const s=sim,area=plan.total*plan.ew,rate=area/(s.makespan/60),days=Math.ceil(s.makespan/60/s.win),ch=s.robots.reduce((a,r)=>a+r.charges,0);
-  $('kpis').innerHTML=kpi(hm(s.makespan),'Durée','fin à '+clock(s.makespan))+kpi(fmt(rate),'m²/h flotte',fmt(rate/plan.zones.length)+' m²/h par robot')+
+  $('kpis').innerHTML=kpi(hm(s.makespan),'Durée','fin à '+clock(s.makespan))+kpi(fmt(rate),'m²/h flotte',plan.cross?'terrain tondu 2 fois (croisé)':fmt(rate/plan.zones.length)+' m²/h par robot')+
     kpi(Math.max(...s.robots.map(r=>r.cycles)),'Cycles batterie',ch+' recharge'+(ch>1?'s':'')+' au total')+kpi(days,days>1?'Jours':'Jour','plage de '+s.win+' h / jour');
   const T=s.makespan;let g='';s.robots.forEach((r,i)=>{g+='<div class="grow"><div class="lab"><i class="dot" style="background:'+COLORS[i]+'"></i>R'+(i+1)+'</div><div class="track">';
     r.segs.forEach(x=>{const w=(x.e-x.s)/T*100;if(w>0)g+='<div class="seg '+x.type+'" style="left:'+(x.s/T*100)+'%;width:'+w+'%'+(x.type==='mow'?';background:'+COLORS[i]:'')+'" title="'+lbl(x.type)+' '+clock(x.s)+' → '+clock(x.e)+'"></div>'});
