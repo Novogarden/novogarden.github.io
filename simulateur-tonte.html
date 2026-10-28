@@ -113,6 +113,10 @@ th:first-child,td:first-child{text-align:left}
 .base-handle div{transform:translate(-50%,-100%);display:inline-flex;align-items:center;gap:5px;white-space:nowrap;background:rgba(0,0,0,.78);color:#fff;font:600 11px var(--f-mono);padding:4px 8px;border-radius:6px;border:2px solid #fff;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
 .base-handle div::after{content:"";position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);border:6px solid transparent;border-top-color:#fff;border-bottom:0}
 .base-handle.dragging div{background:var(--accent);cursor:grabbing}
+.report-box{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.report-list{display:flex;flex-direction:column;gap:4px;max-height:220px;overflow:auto}
+.report-list label{display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer}
+.report-list small{color:var(--muted)}
 .parcel-tip{font-family:var(--f-mono);font-size:12px}
 [hidden]{display:none!important}
 </style>
@@ -149,9 +153,10 @@ th:first-child,td:first-child{text-align:left}
         <div class="btns">
           <button class="btn ghost small" type="button" id="editBtn">Modifier les points</button>
           <button class="btn ghost small" type="button" id="addParcelBtn">+ Parcelle voisine</button>
-          <button class="btn ghost small" type="button" id="zoneDrawBtn">+ Autre zone (dessin)</button>
+          <button class="btn ghost small" type="button" id="zoneDrawBtn">+ Zone (dessin)</button>
           <button class="btn ghost small" type="button" id="zoneParcelBtn">+ Autre zone (parcelle)</button>
           <button class="btn ghost small" type="button" id="holeBtn">+ Zone d'exclusion</button>
+          <button class="btn ghost small" type="button" id="routeBtn">+ Route de passage</button>
           <button class="btn ghost small" type="button" id="baseBtn">Placer la base de charge</button>
           <button class="btn ghost small" type="button" id="resetBtn">Effacer le tracé</button>
         </div>
@@ -170,6 +175,14 @@ th:first-child,td:first-child{text-align:left}
     <div class="sec">
       <h2>Mes terrains <span class="clock" id="count"></span></h2>
       <div class="tlist" id="tlist"></div>
+      <button class="btn ghost small" type="button" id="reportBtn">Générer un rapport</button>
+      <div id="reportBox" class="report-box" hidden>
+        <p class="hint">Coche les terrains à mettre dans le rapport :</p>
+        <div id="reportList" class="report-list"></div>
+        <div class="btns"><button class="btn ghost small" type="button" id="repAll">Tout cocher</button><button class="btn ghost small" type="button" id="repClient">Même client</button></div>
+        <div class="field"><label for="repTitle">Titre du rapport</label><input type="text" id="repTitle" placeholder="Ex. Stade des Closets – Rugby Club Flers"></div>
+        <button class="btn" type="button" id="repGo">Ouvrir le rapport</button>
+      </div>
     </div>
 
     <div class="sec">
@@ -277,8 +290,8 @@ sizeOv();map.on('resize',()=>{sizeOv();draw()});map.on('move zoom zoomend moveen
 // ---------- état ----------
 let terrains=[];try{terrains=JSON.parse(localStorage.getItem(STORE)||'[]')}catch(e){terrains=[]}
 function persist(){try{localStorage.setItem(STORE,JSON.stringify(terrains))}catch(e){mode('Enregistrement impossible dans ce navigateur. Utilise « Exporter la base ».',true)}}
-let cur=blank(), outerLayer=null, extraLayers=[], holeLayers=[], drawKind=null, editing=false, parcelMode=null, angles=[];
-function blank(){return {id:null,name:'',client:'',address:'',outer:null,extra:[],holes:[],base:null,settings:null}}
+let cur=blank(), outerLayer=null, extraLayers=[], holeLayers=[], routeLayers=[], drawKind=null, editing=false, parcelMode=null, angles=[];
+function blank(){return {id:null,name:'',client:'',address:'',outer:null,extra:[],holes:[],routes:[],base:null,settings:null}}
 
 const shapeStyle={color:'#ffffff',weight:2,fill:false};
 const holeStyle={color:'#ef4444',weight:2,fillColor:'#ef4444',fillOpacity:.25,dashArray:'5 4'};
@@ -291,17 +304,22 @@ function addHole(ll){const lay=L.polygon(ll,holeStyle).addTo(map);holeLayers.pus
 function addExtra(ll){const lay=L.polygon(ll,shapeStyle).addTo(map);extraLayers.push(lay);cur.extra=extraLayers.map(llOf);
   lay.on('pm:edit pm:markerdragend pm:vertexremoved',()=>{cur.extra=extraLayers.map(llOf);changed()});
   lay.on('click',e=>{if(!editing)return;L.DomEvent.stop(e);const k=extraLayers.indexOf(lay);map.removeLayer(lay);extraLayers.splice(k,1);angles.splice(k+1,1);cur.extra=extraLayers.map(llOf);changed()})}
-function allBounds(){return L.featureGroup([outerLayer,...extraLayers].filter(Boolean)).getBounds()}
-function clearShapes(){setOuter(null);extraLayers.forEach(h=>map.removeLayer(h));extraLayers=[];cur.extra=[];holeLayers.forEach(h=>map.removeLayer(h));holeLayers=[];cur.holes=[];angles=[];setEditing(false)}
+const routeStyle={color:'#facc15',weight:5,opacity:.95,dashArray:'10 7',lineCap:'round'};
+function addRoute(ll){if(!ll||ll.length<2)return;const lay=L.polyline(ll,routeStyle).addTo(map);routeLayers.push(lay);cur.routes=routeLayers.map(llOf);
+  lay.bindTooltip('Route de passage (le robot circule sans tondre)',{sticky:true});
+  lay.on('pm:edit pm:markerdragend pm:vertexremoved',()=>{cur.routes=routeLayers.map(llOf);changed()});
+  lay.on('click',e=>{if(!editing)return;L.DomEvent.stop(e);map.removeLayer(lay);routeLayers=routeLayers.filter(h=>h!==lay);cur.routes=routeLayers.map(llOf);changed()})}
+function allBounds(){return L.featureGroup([outerLayer,...extraLayers,...routeLayers].filter(Boolean)).getBounds()}
+function clearShapes(){setOuter(null);extraLayers.forEach(h=>map.removeLayer(h));extraLayers=[];cur.extra=[];holeLayers.forEach(h=>map.removeLayer(h));holeLayers=[];cur.holes=[];routeLayers.forEach(h=>map.removeLayer(h));routeLayers=[];cur.routes=[];angles=[];setEditing(false)}
 
 map.on('pm:create',e=>{const ll=llOf(e.layer);map.removeLayer(e.layer);
-  if(drawKind==='hole')addHole(ll);else if(drawKind==='extra'&&cur.outer)addExtra(ll);else setOuter(ll);drawKind=null;mode('');changed()});
+  if(drawKind==='hole')addHole(ll);else if(drawKind==='route')addRoute(ll);else if(drawKind==='extra'&&cur.outer)addExtra(ll);else setOuter(ll);drawKind=null;mode('');changed()});
 map.on('pm:drawend',()=>{if(drawKind){drawKind=null;mode('')}});
 
 function mode(t,err){const m=$('modeMsg');m.hidden=!t;m.textContent=t||'';m.className='mode'+(err?' err':'')}
-function setEditing(on){editing=on;[outerLayer,...extraLayers,...holeLayers].forEach(l=>{if(l&&l.pm){on?l.pm.enable({allowSelfIntersection:false,snappable:true}):l.pm.disable()}});
+function setEditing(on){editing=on;[outerLayer,...extraLayers,...holeLayers,...routeLayers].forEach(l=>{if(l&&l.pm){on?l.pm.enable({allowSelfIntersection:false,snappable:true}):l.pm.disable()}});
   $('editBtn').classList.toggle('on',on);$('editBtn').textContent=on?'Terminer la modification':'Modifier les points';
-  if(on)mode('Fais glisser les points, clique un point du milieu pour en ajouter, clic droit sur un point pour le supprimer. Un clic sur une zone rouge ou sur une zone ajoutée la supprime.');else if(!parcelMode&&!drawKind)mode('')}
+  if(on)mode('Fais glisser les points, clique un point du milieu pour en ajouter, clic droit sur un point pour le supprimer. Un clic sur une zone rouge, une zone ajoutée ou une route la supprime.');else if(!parcelMode&&!drawKind)mode('')}
 
 // ---------- recherche d'adresse ----------
 let qt=null;
@@ -327,7 +345,7 @@ function startParcel(kind){parcelMode=kind;if(!map.hasLayer(cada))cada.addTo(map
 let baseMode=false;
 $('baseBtn').onclick=()=>{parcelMode=null;baseMode=true;map.getContainer().style.cursor='crosshair';mode('Clique l\u2019endroit des bornes de charge, ou fais glisser l\u2019étiquette BASE sur la carte : elle suit le bord de pelouse le plus proche.')};
 map.on('click',e=>{if(!baseMode||!cur.outer)return;baseMode=false;map.getContainer().style.cursor='';const g=geo();
-  cur.base=O.toLL(snapAny(O.toM([e.latlng.lat,e.latlng.lng]),g.outers));mode(cur.id?'Base de charge déplacée. Clique « Mettre à jour » pour la garder.':'Base de charge placée.');changed()});
+  cur.base=O.toLL(snapBase(O.toM([e.latlng.lat,e.latlng.lng]),g));mode(cur.id?'Base de charge déplacée. Clique « Mettre à jour » pour la garder.':'Base de charge placée.');changed()});
 map.on('click',async e=>{if(!parcelMode)return;const kind=parcelMode;parcelMode=null;map.getContainer().style.cursor='';mode('Recherche de la parcelle…');
   try{const p=await fetchParcel(e.latlng);if(!p){mode('Aucune parcelle à cet endroit.',true);return}
     const info='Parcelle '+p.props.section+' '+p.props.numero+' ('+p.props.nom_com+'), '+fmt((p.props.contenance||0)/10000,2)+' ha cadastrés';const nh=(p.holes||[]).length;
@@ -356,14 +374,15 @@ function mergeRings(a,b){
 $('parcelBtn').onclick=()=>startParcel('new');
 $('addParcelBtn').onclick=()=>startParcel('add');
 $('drawBtn').onclick=()=>{drawKind='outer';map.pm.enableDraw('Polygon',{snappable:true,templineStyle:{color:'#b6e35f'},hintlineStyle:{color:'#b6e35f',dashArray:'5 5'},pathOptions:shapeStyle});mode('Clique les coins de la pelouse, puis le premier point pour fermer.')};
-$('zoneDrawBtn').onclick=()=>{drawKind='extra';map.pm.enableDraw('Polygon',{snappable:true,templineStyle:{color:'#b6e35f'},hintlineStyle:{color:'#b6e35f',dashArray:'5 5'},pathOptions:shapeStyle});mode('Dessine l\u2019autre zone de tonte : les robots y vont en traversant le chemin le plus court.')};
+$('zoneDrawBtn').onclick=()=>{drawKind='extra';map.pm.enableDraw('Polygon',{snappable:true,templineStyle:{color:'#b6e35f'},hintlineStyle:{color:'#b6e35f',dashArray:'5 5'},pathOptions:shapeStyle});mode('Dessine une zone de tonte. Si tu la traces à l\u2019intérieur d\u2019une autre (un terrain dans ses abords), elle est retirée de la grande zone et tondue à part, avec son propre sens.')};
+$('routeBtn').onclick=()=>{drawKind='route';map.pm.enableDraw('Line',{snappable:true,templineStyle:{color:'#facc15'},hintlineStyle:{color:'#facc15',dashArray:'5 5'},pathOptions:routeStyle});mode('Trace le chemin que le robot peut emprunter sans tondre (allée, passage entre deux zones…) : clique chaque point, puis reclique le dernier pour terminer.')};
 $('zoneParcelBtn').onclick=()=>startParcel('zone');
 $('holeBtn').onclick=()=>{drawKind='hole';map.pm.enableDraw('Polygon',{snappable:true,pathOptions:holeStyle,templineStyle:{color:'#ef4444'},hintlineStyle:{color:'#ef4444',dashArray:'5 5'}});mode('Dessine la zone à ne pas tondre (maison, massif, potager…).')};
 $('editBtn').onclick=()=>setEditing(!editing);
 $('resetBtn').onclick=()=>{clearShapes();cur.base=null;mode('');changed()};
 $('newBtn').onclick=()=>{clearShapes();cur=blank();['tName','tClient','tAddr'].forEach(i=>$(i).value='');mode('');renderTerrain();changed();renderList()};
 $('saveBtn').onclick=()=>{if(!cur.outer)return;const name=$('tName').value.trim();if(!name){mode('Donne un nom au terrain avant d’enregistrer.',true);$('tName').focus();return}
-  const rec={id:cur.id||('t'+Date.now().toString(36)),name,client:$('tClient').value.trim(),address:$('tAddr').value.trim(),outer:cur.outer,extra:cur.extra||[],holes:cur.holes,base:cur.base||null,area:netArea(),settings:readSettings(),
+  const rec={id:cur.id||('t'+Date.now().toString(36)),name,client:$('tClient').value.trim(),address:$('tAddr').value.trim(),outer:cur.outer,extra:cur.extra||[],holes:cur.holes,routes:cur.routes||[],base:cur.base||null,area:netArea(),settings:readSettings(),
     center:allBounds().getCenter(),updatedAt:Date.now()};
   const i=terrains.findIndex(t=>t.id===rec.id);if(i>=0)terrains[i]=Object.assign(terrains[i],rec);else{rec.createdAt=Date.now();terrains.unshift(rec)}
   cur.id=rec.id;persist();setEditing(false);renderList();renderTerrain();mode('Terrain enregistré avec ses réglages.')};
@@ -371,12 +390,12 @@ let delArm=false;
 $('delBtn').onclick=()=>{if(!delArm){delArm=true;$('delBtn').textContent='Confirmer la suppression';setTimeout(()=>{delArm=false;$('delBtn').textContent='Supprimer'},4000);return}
   terrains=terrains.filter(t=>t.id!==cur.id);persist();delArm=false;$('delBtn').textContent='Supprimer';$('newBtn').click()};
 
-function openTerrain(t){clearShapes();cur=JSON.parse(JSON.stringify(t));const holes=cur.holes||[],extra=cur.extra||[];cur.holes=[];cur.extra=[];setOuter(cur.outer);extra.forEach(addExtra);holes.forEach(addHole);
+function openTerrain(t){clearShapes();cur=JSON.parse(JSON.stringify(t));const holes=cur.holes||[],extra=cur.extra||[],routes=cur.routes||[];cur.holes=[];cur.extra=[];cur.routes=[];setOuter(cur.outer);extra.forEach(addExtra);holes.forEach(addHole);routes.forEach(addRoute);
   $('tName').value=t.name;$('tClient').value=t.client||'';$('tAddr').value=t.address||'';
   if(t.settings)applySettings(t.settings);map.fitBounds(allBounds(),{padding:[30,30],maxZoom:20});mode('');renderTerrain();renderList();changed(true)}
 function renderTerrain(){const has=!!cur.outer;$('noShape').hidden=has;$('hasShape').hidden=!has;$('delBtn').hidden=!cur.id;
   $('tTitle').textContent=cur.id?'Terrain enregistré':'Nouveau terrain';$('saveBtn').textContent=cur.id?'Mettre à jour':'Enregistrer';
-  if(has){const g=geo();$('areaTxt').innerHTML='<b>'+fmt(g.area)+' m²</b> · '+fmt(g.area/10000,2)+' ha à tondre'+(g.zones.length>1?' · '+g.zones.length+' zones':'')+(cur.holes.length?' · '+cur.holes.length+' exclusion'+(cur.holes.length>1?'s':''):'')+'<br>Base de charge : '+(cur.base?'placée':'automatique (bouton « Placer la base » pour la choisir)')}}
+  if(has){const g=geo();$('areaTxt').innerHTML='<b>'+fmt(g.area)+' m²</b> · '+fmt(g.area/10000,2)+' ha à tondre'+(g.zones.length>1?' · '+g.zones.length+' zones'+(g.zones.some(z=>z.parent>=0)?' (dont '+g.zones.filter(z=>z.parent>=0).length+' imbriquée'+(g.zones.filter(z=>z.parent>=0).length>1?'s':'')+')':''):'')+(g.routes.length?' · '+g.routes.length+' route'+(g.routes.length>1?'s':'')+' de passage':'')+(cur.holes.length?' · '+cur.holes.length+' exclusion'+(cur.holes.length>1?'s':''):'')+'<br>Base de charge : '+(cur.base?'placée':'automatique (bouton « Placer la base » pour la choisir)')}}
 function renderList(){$('count').textContent=terrains.length||'';
   $('tlist').innerHTML=terrains.length?terrains.map(t=>'<button type="button" class="titem" data-id="'+t.id+'" aria-current="'+(t.id===cur.id)+'"><b>'+esc(t.name)+'</b><span class="ha">'+fmt((t.area||0)/10000,2)+' ha</span><small>'+esc(t.client||t.address||'Sans client')+'</small></button>').join(''):'<p class="hint">Aucun terrain enregistré. Cherche une adresse puis clique une parcelle.</p>'}
 $('tlist').onclick=e=>{const b=e.target.closest('.titem');if(!b)return;const t=terrains.find(x=>x.id===b.dataset.id);if(t)openTerrain(t)};
@@ -393,31 +412,44 @@ let N=2;const rb=$('robots');
 for(let i=1;i<=8;i++){const b=document.createElement('button');b.type='button';b.textContent=i;b.onclick=()=>{setN(i);changed(true)};rb.appendChild(b)}
 function setN(i){N=i;[...rb.children].forEach((c,k)=>c.setAttribute('aria-pressed',k+1===N));$('nOut').textContent=N}setN(2);
 const KEYS=['cross','speed','overlap','runtime','reserve','charger','recharge','turn','travel','start','win'];
-function readSettings(){const s={robots:N,angles:angles.slice()};KEYS.forEach(k=>s[k]=k==='charger'?$(k).value:num(k));return s}
-function applySettings(s){KEYS.forEach(k=>{if(s[k]!=null)$(k).value=s[k]});if(s.robots)setN(s.robots);angles=Array.isArray(s.angles)?s.angles.slice():(s.angle!=null?[s.angle]:[])}
+function readSettings(){const s={robots:N,angles:angles.slice()};KEYS.forEach(k=>s[k]=(k==='charger'||k==='cross')?$(k).value:num(k));return s}
+function applySettings(s){KEYS.forEach(k=>{if(s[k]!=null)$(k).value=s[k]});if(!['off','90','45'].includes($('cross').value))$('cross').value='off';if(s.robots)setN(s.robots);angles=Array.isArray(s.angles)?s.angles.slice():(s.angle!=null?[s.angle]:[])}
 KEYS.forEach(k=>$(k).addEventListener(k==='cross'?'change':'input',()=>changed(true)));
 $('charger').addEventListener('change',()=>{$('recharge').value=$('charger').value==='10'?100:190;changed()});
 // un sens de tonte par zone (comme dans l'appli Lymow) ; une nouvelle zone reçoit son sens optimal
 function syncAngles(g){if(!g.outer){angles=[];return}g.zones.forEach((z,k)=>{if(angles[k]==null)angles[k]=bestAngle(z.rings)});angles.length=g.zones.length}
 function renderAngles(g){const box=$('angles');if(!g.outer){box.innerHTML='<p class="hint">Sens de tonte : disponible une fois le terrain tracé.</p>';return}
   const key=g.zones.length+':'+angles.join(',');if(box.dataset.key===key)return;box.dataset.key=key;
-  box.innerHTML=g.zones.map((z,k)=>'<div class="field"><label for="ang'+k+'">Sens de tonte'+(g.zones.length>1?' · zone '+(k+1):'')+' <output id="angOut'+k+'">'+angles[k]+'°</output></label><input type="range" id="ang'+k+'" min="0" max="179" step="1" value="'+angles[k]+'"></div>').join('');
+  box.innerHTML=g.zones.map((z,k)=>'<div class="field"><label for="ang'+k+'">Sens de tonte'+(g.zones.length>1?' · zone '+(k+1)+(z.parent>=0?' (dans zone '+(z.parent+1)+')':''):'')+' <output id="angOut'+k+'">'+angles[k]+'°</output></label><input type="range" id="ang'+k+'" min="0" max="179" step="1" value="'+angles[k]+'"></div>').join('');
   g.zones.forEach((z,k)=>$('ang'+k).addEventListener('input',e=>{angles[k]=+e.target.value;$('angOut'+k).textContent=angles[k]+'°';box.dataset.key=g.zones.length+':'+angles.join(',');changed()}))}
 $('autoAngle').onclick=()=>{const g=geo();if(!g.outer)return;angles=g.zones.map(z=>bestAngle(z.rings));changed()};
 
 // ---------- géométrie (mètres locaux, x vers l'est, y vers le sud) ----------
 let O=null;
-function geo(){if(!cur.outer)return {outer:null,area:0,rings:[],zones:[],outers:[]};
+function geo(){if(!cur.outer)return {outer:null,area:0,rings:[],zones:[],outers:[],routes:[]};
   const pts=[cur.outer,...(cur.extra||[])].flat();
   const lat0=pts.reduce((s,p)=>s+p[0],0)/pts.length,lon0=pts.reduce((s,p)=>s+p[1],0)/pts.length,c=Math.cos(lat0*Math.PI/180);
   O={lat0,lon0};const m=ll=>ll.map(p=>[(p[1]-lon0)*111320*c,-(p[0]-lat0)*110574]);
-  const outers=[cur.outer,...(cur.extra||[])].map(m),holes=(cur.holes||[]).map(m);
-  const inR=(p,r)=>{let ins=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const a=r[i],b=r[j];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])ins=!ins}return ins};
-  // chaque zone d'exclusion est rattachée à la zone de tonte qui la contient
-  const zones=outers.map(o=>({outer:o,holes:holes.filter(h=>inR(h[0],o))}));zones.forEach(z=>z.rings=[z.outer,...z.holes]);
-  let area=0;zones.forEach(z=>{area+=ringArea(z.outer);z.holes.forEach(h=>area-=ringArea(h))});
+  const outers=[cur.outer,...(cur.extra||[])].map(m),holes=(cur.holes||[]).map(m),routes=(cur.routes||[]).filter(r=>r&&r.length>1).map(m);
+  const areas=outers.map(ringArea);
+  // une zone tracée à l'intérieur d'une autre devient un « trou » de sa zone mère, et reste tondue à part
+  const parentOf=(poly,selfIdx)=>{let best=-1;outers.forEach((o,j)=>{if(j===selfIdx||areas[j]<=ringArea(poly))return;if(containsPoly(o,poly)&&(best<0||areas[j]<areas[best]))best=j});return best};
+  const parent=outers.map((o,i)=>parentOf(o,i));
+  const zones=outers.map((o,i)=>({outer:o,parent:parent[i],holes:[],excl:[],children:[]}));
+  parent.forEach((pi,i)=>{if(pi>=0){zones[pi].holes.push(outers[i]);zones[pi].children.push(i)}});
+  holes.forEach(h=>{const pi=parentOf(h,-1);if(pi>=0){zones[pi].holes.push(h);zones[pi].excl.push(h)}});
+  zones.forEach(z=>{z.rings=[z.outer,...z.holes];z.area=Math.max(0,ringArea(z.outer)-z.holes.reduce((a,h)=>a+ringArea(h),0))});
+  const area=zones.reduce((a,z)=>a+z.area,0);
   O.toLL=q=>[lat0-q[1]/110574,lon0+q[0]/(111320*c)];O.toM=ll=>m([ll])[0];
-  return {outer:outers[0],outers,zones,rings:zones.flatMap(z=>z.rings),area:Math.max(0,area),base:cur.base?snapAny(m([cur.base])[0],outers):null}}
+  const G0={outer:outers[0],outers,zones,routes,rings:zones.flatMap(z=>z.rings),area};
+  G0.base=cur.base?snapBase(m([cur.base])[0],G0):null;return G0}
+function inRing(p,r){let ins=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const a=r[i],b=r[j];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])ins=!ins}return ins}
+function segDist(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy;let t=L?((p[0]-a[0])*dx+(p[1]-a[1])*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(a[0]+t*dx-p[0],a[1]+t*dy-p[1])}
+function nearRing(p,r,tol){for(let i=0;i<r.length;i++)if(segDist(p,r[i],r[(i+1)%r.length])<tol)return true;return false}
+// B est dans A si (presque) tous ses sommets sont dedans ou sur le bord (tolère l'aimantation des points)
+function containsPoly(A,B){let k=0;B.forEach(p=>{if(inRing(p,A)||nearRing(p,A,0.3))k++});return k>=Math.ceil(B.length*0.9)}
+function snapBase(q,g){let best=snapAny(q,g.outers),bd=Math.hypot(best[0]-q[0],best[1]-q[1]);
+  (g.routes||[]).forEach(r=>{for(let i=1;i<r.length;i++){const a=r[i-1],b=r[i],dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy;let t=L?((q[0]-a[0])*dx+(q[1]-a[1])*dy)/L:0;t=Math.max(0,Math.min(1,t));const p=[a[0]+t*dx,a[1]+t*dy],d=Math.hypot(p[0]-q[0],p[1]-q[1]);if(d<bd){bd=d;best=p}}});return best}
 function snapAny(q,outers){let best=null,bd=Infinity;outers.forEach(r=>{const p=snapToEdge(q,r),d=Math.hypot(p[0]-q[0],p[1]-q[1]);if(d<bd){bd=d;best=p}});return best}
 // point du contour le plus proche (la base est posée en bordure de pelouse)
 function snapToEdge(q,ring){let best=null,bd=Infinity;for(let i=0;i<ring.length;i++){const a=ring[i],b=ring[(i+1)%ring.length];const dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy;
@@ -432,23 +464,28 @@ function lanesOf(rings,a,ew){const rr=rings.map(r=>r.map(p=>rot(p,a)));let y0=In
 function bestAngle(rings){const ew=CUT*(1-num('overlap')/100);let best=0,bs=Infinity;
   for(let d=0;d<180;d+=3){const {lanes}=lanesOf(rings,d*Math.PI/180,ew*2);let n=0;lanes.forEach(l=>n+=l.segs.length);if(n<bs){bs=n;best=d}}return best}
 // ---------- navigation à l'intérieur du terrain (graphe de visibilité) ----------
-function makeNav(rings){
-  const E=[],V=[];rings.forEach(r=>{for(let i=0;i<r.length;i++){E.push([r[i],r[(i+1)%r.length]]);V.push(r[i])}});
-  const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
-  const proper=(a,b,c,d)=>{const e=1e-9,d1=cr(c,d,a),d2=cr(c,d,b),d3=cr(a,b,c),d4=cr(a,b,d);return ((d1>e&&d2<-e)||(d1<-e&&d2>e))&&((d3>e&&d4<-e)||(d3<-e&&d4>e))};
-  const inside=p=>{let c=false;rings.forEach(r=>{for(let i=0,j=r.length-1;i<r.length;j=i++){const a=r[i],b=r[j];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])c=!c}});return c};
-  const onB=p=>E.some(([a,b])=>{const dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy;let t=L?((p[0]-a[0])*dx+(p[1]-a[1])*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(a[0]+t*dx-p[0],a[1]+t*dy-p[1])<0.03});
-  function vis(a,b){if(Math.hypot(a[0]-b[0],a[1]-b[1])<1e-6)return true;for(const [c,d] of E)if(proper(a,b,c,d))return false;
-    for(const f of [.15,.5,.85]){const p=[a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f];if(!inside(p)&&!onB(p))return false}return true}
+function makeNav(G){
+  const zones=G.zones,routes=G.routes||[],RW=0.6,V=[];
+  zones.forEach(z=>z.rings.forEach(r=>r.forEach(p=>V.push(p))));routes.forEach(r=>r.forEach(p=>V.push(p)));
+  const rings=zones.flatMap(z=>z.rings);
+  // un point est praticable s'il est dans une zone (hors exclusions), sur un bord, ou sur une route de passage
+  const inZone=p=>zones.some(z=>inRing(p,z.outer)&&!z.excl.some(h=>inRing(p,h)));
+  const onRoute=p=>routes.some(r=>{for(let i=1;i<r.length;i++)if(segDist(p,r[i-1],r[i])<=RW)return true;return false});
+  const free=p=>inZone(p)||onRoute(p)||rings.some(r=>nearRing(p,r,0.05));
+  function vis(a,b){const L=Math.hypot(a[0]-b[0],a[1]-b[1]);if(L<1e-6)return true;const n=Math.min(400,Math.max(3,Math.ceil(L/0.5)));
+    for(let k=1;k<n;k++){const f=k/n;if(!free([a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f]))return false}return true}
   const cache=new Map();const visV=(i,j)=>{const k=i<j?i*1e6+j:j*1e6+i;let r=cache.get(k);if(r===undefined){r=vis(V[i],V[j]);cache.set(k,r)}return r};
-  function route(a,b){if(vis(a,b))return [a,b];const n=V.length;
+  const rc=new Map();
+  function route(a,b){const key=a[0].toFixed(1)+','+a[1].toFixed(1)+'>'+b[0].toFixed(1)+','+b[1].toFixed(1);const hit=rc.get(key);if(hit)return hit;
+    let res;if(vis(a,b))res=[a,b];else{const n=V.length;
     const dist=new Float64Array(n+1).fill(Infinity),prev=new Int32Array(n+1).fill(-1),done=new Uint8Array(n+1),toB=new Uint8Array(n);
     for(let i=0;i<n;i++){if(vis(a,V[i]))dist[i]=Math.hypot(a[0]-V[i][0],a[1]-V[i][1]);toB[i]=vis(V[i],b)?1:0}
     for(;;){let u=-1,best=Infinity;for(let i=0;i<=n;i++)if(!done[i]&&dist[i]<best){best=dist[i];u=i}if(u<0||u===n)break;done[u]=1;
       if(toB[u]){const d=dist[u]+Math.hypot(V[u][0]-b[0],V[u][1]-b[1]);if(d<dist[n]){dist[n]=d;prev[n]=u}}
       for(let w=0;w<n;w++){if(done[w])continue;const d=dist[u]+Math.hypot(V[u][0]-V[w][0],V[u][1]-V[w][1]);if(d<dist[w]&&visV(u,w)){dist[w]=d;prev[w]=u}}}
-    if(!isFinite(dist[n]))return [a,b];const P=[b];let u=prev[n];while(u>=0){P.push(V[u]);u=prev[u]}P.push(a);return P.reverse()}
-  return {route,vis};
+    if(!isFinite(dist[n]))res=[a,b];else{const P=[b];let u=prev[n];while(u>=0){P.push(V[u]);u=prev[u]}P.push(a);res=P.reverse()}}
+    rc.set(key,res);return res}
+  return {route,vis,free};
 }
 const plen=P=>{let s=0;for(let i=1;i<P.length;i++)s+=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]);return s};
 function alongP(P,f){const L=plen(P)*Math.max(0,Math.min(1,f));let s=0;for(let i=1;i<P.length;i++){const d=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]);
@@ -492,7 +529,7 @@ function mkZone(ch,nav,v,turn,ew){const segs=[];let t=0,prev=null,len=0,cx=0,cy=
   return {segs,T:t,len,area:len*ew,lanes:lanesSet.size,label}}
 function buildPlan(G,base){
   const ew=CUT*(1-Math.min(50,num('overlap'))/100),v=Math.min(1,Math.max(0.3,num('speed'))),turn=num('turn');
-  const nav=makeNav(G.rings),crossV=$('cross').value,cross=crossV!=='off';
+  const nav=makeNav(G),crossV=$('cross').value,cross=crossV!=='off';
   const start0=base||null;
   const p1=passSeq(G,nav,ew,0,start0,0);let zones;
   if(!cross){zones=splitSeq(p1.seq,N,v,turn).map(ch=>Object.assign(mkZone(ch,nav,v,turn,ew),{pass:0}))}
@@ -539,7 +576,7 @@ function syncBaseMarker(){if(!plan||!O){if(baseMk){map.removeLayer(baseMk);baseM
       icon:L.divIcon({className:'base-handle',html:'<div>⠿ BASE</div>',iconSize:[0,0],iconAnchor:[0,14]})}).addTo(map);
     baseMk.bindTooltip('Maintiens et fais glisser pour déplacer la base le long du bord',{direction:'top',offset:[0,-34]});
     baseMk.on('dragstart',()=>{dragging=true;playing=false;$('play').textContent='Lancer';baseMk.getElement().classList.add('dragging')});
-    baseMk.on('drag',e=>{const g=G||geo();const q=snapAny(O.toM([e.latlng.lat,e.latlng.lng]),g.outers);const sl=O.toLL(q);
+    baseMk.on('drag',e=>{const g=G||geo();const q=snapBase(O.toM([e.latlng.lat,e.latlng.lng]),g);const sl=O.toLL(q);
       baseMk.setLatLng(sl);plan.base=q;plan.zones.forEach(z=>z.dock=q);draw()});
     baseMk.on('dragend',()=>{dragging=false;baseMk.getElement().classList.remove('dragging');const q=baseMk.getLatLng();cur.base=[q.lat,q.lng];
       mode(cur.id?'Base déplacée. Clique « Mettre à jour » pour la garder.':'Base déplacée.');changed(true)})}
@@ -601,6 +638,102 @@ $('t').addEventListener('input',()=>{if(!sim)return;tNow=$('t').value/1000*sim.m
 $('play').onclick=()=>{if(!sim)return;if(!playing&&tNow>=sim.makespan-1e-6)tNow=0;playing=!playing;$('play').textContent=playing?'Pause':'Lancer';lastTs=0;if(playing)requestAnimationFrame(loop)};
 function loop(ts){if(!playing||!sim)return;if(lastTs)tNow+=sim.makespan/num('pace')*(ts-lastTs)/1000;lastTs=ts;
   if(tNow>=sim.makespan){tNow=sim.makespan;playing=false;$('play').textContent='Rejouer'}$('t').value=Math.round(tNow/sim.makespan*1000);renderDynamic();if(playing)requestAnimationFrame(loop)}
+
+// ---------- rapport : plusieurs terrains, plan sur photo satellite, surfaces et simulation ----------
+function simulateTerrain(t){
+  const save={cur,angles:angles.slice(),vals:readSettings(),G,plan,sim,O};
+  try{cur=JSON.parse(JSON.stringify(t));if(t.settings)applySettings(t.settings);
+    const g=geo();if(!g.outer||g.area<5)return null;syncAngles(g);const ang=angles.slice();
+    const p=buildPlan(g,g.base);const s=schedule(p);
+    return {g,p,s,angles:ang,robots:N,settings:readSettings(),base:p.base?O.toLL(p.base):null}}
+  catch(e){console.error(e);return null}
+  finally{cur=save.cur;applySettings(save.vals);angles=save.angles;G=save.G;plan=save.plan;sim=save.sim;O=save.O}}
+function renderReportList(){const box=$('reportList');
+  box.innerHTML=terrains.map(t=>'<label><input type="checkbox" value="'+t.id+'"'+((cur.client&&t.client===cur.client)||t.id===cur.id?' checked':'')+'><span><b>'+esc(t.name)+'</b><br><small>'+esc(t.client||'Sans client')+' · '+fmt((t.area||0)/10000,2)+' ha</small></span></label>').join('')||'<p class="hint">Enregistre d’abord au moins un terrain.</p>'}
+$('reportBtn').onclick=()=>{const b=$('reportBox');b.hidden=!b.hidden;if(!b.hidden){renderReportList();if(!$('repTitle').value&&cur.client)$('repTitle').value=cur.client}};
+$('repAll').onclick=()=>$('reportList').querySelectorAll('input').forEach(i=>i.checked=true);
+$('repClient').onclick=()=>{const c=cur.client||(terrains.find(t=>t.id===cur.id)||{}).client;$('reportList').querySelectorAll('input').forEach(i=>{const t=terrains.find(x=>x.id===i.value);i.checked=!!(t&&c&&t.client===c)})};
+$('repGo').onclick=()=>{const ids=[...$('reportList').querySelectorAll('input:checked')].map(i=>i.value);const list=terrains.filter(t=>ids.includes(t.id));
+  if(!list.length){mode('Coche au moins un terrain pour le rapport.',true);return}
+  const w=window.open('','_blank');if(!w){mode('Le navigateur a bloqué l’ouverture du rapport : autorise les fenêtres pour ce site.',true);return}
+  w.document.open();w.document.write('<p style="font:16px sans-serif;padding:24px">Calcul du rapport…</p>');
+  setTimeout(()=>{const html=buildReport(list,$('repTitle').value.trim());w.document.open();w.document.write(html);w.document.close()},30)};
+
+const ZCOL=['#7fd04b','#3ec7e0','#f7b538','#e879f9','#a3e635','#60a5fa','#fb923c','#f472b6'];
+function wproj(lat,lng,z){const S=256*Math.pow(2,z),sn=Math.sin(lat*Math.PI/180);return [(lng+180)/360*S,(0.5-Math.log((1+sn)/(1-sn))/(4*Math.PI))*S]}
+function planSVG(t,res,maxW,maxH){
+  const polys=[t.outer,...(t.extra||[])],all=[...polys.flat(),...(t.routes||[]).flat()];
+  let la0=90,la1=-90,lo0=180,lo1=-180;all.forEach(p=>{la0=Math.min(la0,p[0]);la1=Math.max(la1,p[0]);lo0=Math.min(lo0,p[1]);lo1=Math.max(lo1,p[1])});
+  let z=19,a,b;for(;z>10;z--){a=wproj(la1,lo0,z);b=wproj(la0,lo1,z);if(b[0]-a[0]<=maxW-60&&b[1]-a[1]<=maxH-60)break}
+  const pad=30,x0=a[0]-pad,y0=a[1]-pad,W=Math.round(b[0]-a[0]+2*pad),H=Math.round(b[1]-a[1]+2*pad);
+  const P=p=>{const q=wproj(p[0],p[1],z);return [(q[0]-x0).toFixed(1),(q[1]-y0).toFixed(1)]};
+  const pts=r=>r.map(p=>P(p).join(',')).join(' ');
+  let tiles='';for(let tx=Math.floor(x0/256);tx<=Math.floor((x0+W)/256);tx++)for(let ty=Math.floor(y0/256);ty<=Math.floor((y0+H)/256);ty++)
+    tiles+='<img src="https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX='+z+'&TILEROW='+ty+'&TILECOL='+tx+'" style="left:'+(tx*256-x0)+'px;top:'+(ty*256-y0)+'px" alt="">';
+  // zones (les zones mères d'abord, les zones imbriquées par-dessus)
+  const g=res&&res.g,order=polys.map((_,i)=>i).sort((i,j)=>((g&&g.zones[i].parent>=0)?1:0)-((g&&g.zones[j].parent>=0)?1:0));
+  let svg='<defs><pattern id="hx" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="rgba(239,68,68,.35)"/><line x1="0" y1="0" x2="0" y2="8" stroke="#ef4444" stroke-width="3"/></pattern></defs>';
+  order.forEach(i=>{svg+='<polygon points="'+pts(polys[i])+'" fill="'+ZCOL[i%ZCOL.length]+'" fill-opacity=".38" stroke="#fff" stroke-width="2"/>'});
+  (t.holes||[]).forEach(h=>{svg+='<polygon points="'+pts(h)+'" fill="url(#hx)" stroke="#ef4444" stroke-width="1.5"/>'});
+  (t.routes||[]).forEach(r=>{svg+='<polyline points="'+pts(r)+'" fill="none" stroke="#facc15" stroke-width="5" stroke-dasharray="10 7" stroke-linecap="round"/>'});
+  polys.forEach((r,i)=>{let cx=0,cy=0;const q=r.map(P);q.forEach(v=>{cx+=+v[0];cy+=+v[1]});cx/=q.length;cy/=q.length;
+    if(g){const zz=g.zones[i];const m=zz.outer.reduce((s,p)=>[s[0]+p[0],s[1]+p[1]],[0,0]).map(v=>v/zz.outer.length);
+      if(!inRing(m,zz.outer)||zz.holes.some(h=>inRing(m,h))){const s0=res.p.zones.flatMap(zn=>zn.segs).find(sg=>inRing([(sg.a[0]+sg.b[0])/2,(sg.a[1]+sg.b[1])/2],zz.outer)&&!zz.holes.some(h=>inRing([(sg.a[0]+sg.b[0])/2,(sg.a[1]+sg.b[1])/2],h)));
+        if(s0){const ll=O2LL(res,[(s0.a[0]+s0.b[0])/2,(s0.a[1]+s0.b[1])/2]);const v=P(ll);cx=+v[0];cy=+v[1]}}}
+    svg+='<g><circle cx="'+cx+'" cy="'+cy+'" r="13" fill="#1b2418" stroke="#fff" stroke-width="2"/><text x="'+cx+'" y="'+(cy+4.5)+'" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">'+(i+1)+'</text></g>'});
+  if(res&&res.base){const v=P(res.base);svg+='<g><rect x="'+(v[0]-22)+'" y="'+(v[1]-30)+'" width="44" height="18" rx="4" fill="#1b2418" stroke="#fff"/><text x="'+v[0]+'" y="'+(v[1]-17)+'" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">BASE</text><circle cx="'+v[0]+'" cy="'+v[1]+'" r="6" fill="#ff7a1a" stroke="#fff" stroke-width="2"/></g>'}
+  // échelle et nord
+  const mpp=156543.03392*Math.cos(((la0+la1)/2)*Math.PI/180)/Math.pow(2,z),nice=[5,10,20,25,50,100,200,250,500].find(v=>v/mpp>70)||500,bw=nice/mpp;
+  svg+='<g transform="translate(14,'+(H-16)+')"><rect x="-6" y="-20" width="'+(bw+50)+'" height="28" rx="4" fill="rgba(0,0,0,.6)"/><rect width="'+bw+'" height="5" fill="#fff"/><text x="'+(bw+6)+'" y="6" font-size="11" fill="#fff">'+nice+' m</text></g>';
+  svg+='<g transform="translate('+(W-26)+',30)"><circle r="17" fill="rgba(0,0,0,.6)"/><path d="M0,-12 L6,6 L0,2 L-6,6 Z" fill="#fff"/><text y="-17" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" dy="-2">N</text></g>';
+  const sc=Math.min(maxW/W,560/H,2.4);
+  return '<div class="planw" style="width:'+Math.round(W*sc)+'px;height:'+Math.round(H*sc)+'px"><div class="plan" style="width:'+W+'px;height:'+H+'px;transform:scale('+sc.toFixed(3)+')">'+tiles+'<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+svg+'</svg></div></div>'}
+function O2LL(res,q){const o=res.O;return [o.lat0-q[1]/110574,o.lon0+q[0]/(111320*Math.cos(o.lat0*Math.PI/180))]}
+function buildReport(list,title){
+  const rows=list.map(t=>{const r=simulateTerrain(t);if(r){r.O={lat0:0,lon0:0};const pts=[t.outer,...(t.extra||[])].flat();r.O.lat0=pts.reduce((s,p)=>s+p[0],0)/pts.length;r.O.lon0=pts.reduce((s,p)=>s+p[1],0)/pts.length}return {t,r}});
+  const tot=rows.reduce((a,x)=>a+(x.r?x.r.g.area:0),0);
+  const clients=[...new Set(list.map(t=>t.client).filter(Boolean))];
+  const today=new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'});
+  const logo=(document.querySelector('.brand .logo')||{}).src||'';
+  const h=x=>esc(x);
+  const sum=rows.map(({t,r},k)=>'<tr><td><b>'+h(t.name)+'</b></td><td>'+(r?r.g.zones.length:'–')+'</td><td class="n">'+(r?fmt(r.g.area):'–')+' m²</td><td class="n">'+(r?r.robots:'–')+'</td><td class="n">'+(r?hm(r.s.makespan):'–')+'</td><td class="n">'+(r?Math.max(...r.s.robots.map(x=>x.cycles)):'–')+'</td></tr>').join('');
+  const cards=rows.map(({t,r},k)=>{if(!r)return '<section class="card"><h2>'+h(t.name)+'</h2><p>Terrain incomplet : impossible de le simuler.</p></section>';
+    const g=r.g,st=r.settings,exA=g.zones.reduce((a,z)=>a+z.excl.reduce((b,e)=>b+ringArea(e),0),0),exN=g.zones.reduce((a,z)=>a+z.excl.length,0);
+    const rl=g.routes.reduce((a,rt)=>{let s=0;for(let i=1;i<rt.length;i++)s+=Math.hypot(rt[i][0]-rt[i-1][0],rt[i][1]-rt[i-1][1]);return a+s},0);
+    const area=r.p.total*r.p.ew,rate=area/(r.s.makespan/60);
+    const zl=g.zones.map((z,i)=>'<tr><td><span class="sw" style="background:'+ZCOL[i%ZCOL.length]+'"></span>Zone '+(i+1)+(z.parent>=0?' <small>(dans la zone '+(z.parent+1)+')</small>':'')+'</td><td class="n">'+fmt(z.area)+' m²</td><td class="n">'+(r.angles[i]??'–')+'°</td><td class="n">'+(z.excl.length||'–')+'</td></tr>').join('');
+    const rob=r.s.robots.map((x,i)=>'<tr><td>R'+(i+1)+'</td><td class="n">'+fmt(r.p.zones[i].area)+' m²</td><td class="n">'+hm(x.mowT)+'</td><td class="n">'+x.cycles+'</td><td class="n">'+hm(x.end)+'</td></tr>').join('');
+    return '<section class="card"><div class="ch"><span class="num">'+(k+1)+'</span><div><h2>'+h(t.name)+'</h2><p class="sub">'+h([t.client,t.address].filter(Boolean).join(' · '))+'</p></div><div class="big"><b>'+fmt(g.area)+' m²</b><span>'+fmt(g.area/10000,2)+' ha à tondre</span></div></div>'+
+      planSVG(t,r,764,560)+
+      '<div class="cols"><div><h3>Zones de tonte</h3><table><tr><th>Zone</th><th class="n">Surface</th><th class="n">Sens</th><th class="n">Exclusions</th></tr>'+zl+'</table>'+
+      '<p class="meta">'+(exN?exN+' zone'+(exN>1?'s':'')+' d’exclusion ('+fmt(exA)+' m²) · ':'')+(g.routes.length?g.routes.length+' route'+(g.routes.length>1?'s':'')+' de passage ('+fmt(rl)+' m) · ':'')+'base de charge '+(t.base?'placée':'automatique')+'</p></div>'+
+      '<div><h3>Simulation</h3><div class="kp"><div><b>'+hm(r.s.makespan)+'</b><span>une tonte complète, recharges comprises</span></div><div><b>'+fmt(rate)+'</b><span>m²/h pour la flotte</span></div></div>'+
+      '<table><tr><th>Robot</th><th class="n">Surface</th><th class="n">Coupe</th><th class="n">Cycles</th><th class="n">Fini après</th></tr>'+rob+'</table>'+
+      '<p class="meta">'+r.robots+' robot'+(r.robots>1?'s':'')+' Lymow One Plus · '+st.speed+' m/s · autonomie '+st.runtime+' min · chargeur '+st.charger+' A'+(st.cross!=='off'?' · tonte croisée à '+st.cross+'°':'')+'</p></div></div></section>'}).join('');
+  return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rapport de tonte'+(title?' – '+h(title):'')+'</title>'+
+  '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap"><style>'+
+  ':root{--g:#2f5216;--a:#558f1f;--ink:#1b2418;--mut:#5b6a55;--line:#d3dccb;--bg:#f3f6ef}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Source Sans 3",system-ui,sans-serif}'+
+  '.page{max-width:800px;margin:0 auto;padding:24px 16px 48px;display:flex;flex-direction:column;gap:18px}'+
+  'header{background:var(--g);color:#eaf5dc;border-radius:12px;padding:22px 24px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-end}header img{width:220px;max-width:100%}'+
+  'header h1{font:700 24px "Chakra Petch",sans-serif;margin:10px 0 2px;color:#fff}header p{margin:0;opacity:.85}.hr{text-align:right;font-size:13px}'+
+  '.tot{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}.tot div{background:#fff;padding:12px 14px}.tot b{display:block;font:600 24px "Chakra Petch",sans-serif}.tot span{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}'+
+  'table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:6px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}'+
+  '.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:14px;break-inside:avoid;page-break-inside:avoid}'+
+  '.ch{display:flex;gap:12px;align-items:center}.num{flex:none;width:34px;height:34px;border-radius:50%;background:var(--a);color:#fff;display:grid;place-items:center;font:700 16px "Chakra Petch",sans-serif}'+
+  '.ch h2{font:700 19px "Chakra Petch",sans-serif;margin:0}.sub{margin:0;color:var(--mut);font-size:13px}.big{margin-left:auto;text-align:right}.big b{display:block;font:700 22px "Chakra Petch",sans-serif;color:var(--a)}.big span{font-size:12px;color:var(--mut)}'+
+  '.planw{max-width:100%;margin:0 auto;border-radius:8px;overflow:hidden;background:#1d241b;-webkit-print-color-adjust:exact;print-color-adjust:exact}.plan{position:relative;overflow:hidden;transform-origin:0 0}.plan img{position:absolute;width:256px;height:256px}.plan svg{position:absolute;left:0;top:0;font-family:"Source Sans 3",sans-serif}'+
+  '.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}@media(max-width:640px){.cols{grid-template-columns:1fr}.tot{grid-template-columns:1fr}}h3{font:600 13px "Chakra Petch",sans-serif;text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 6px}'+
+  '.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:0}.meta{font-size:12px;color:var(--mut);margin:8px 0 0}'+
+  '.kp{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}.kp div{background:var(--bg);border-radius:8px;padding:8px 10px}.kp b{display:block;font:700 18px "Chakra Petch",sans-serif}.kp span{font-size:11.5px;color:var(--mut)}'+
+  '.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--mut)}.legend i{display:inline-block;width:18px;height:10px;margin-right:5px;vertical-align:0;border-radius:2px}'+
+  'footer{font-size:11.5px;color:var(--mut);text-align:center}.bar{display:flex;justify-content:flex-end}.bar button{font:600 14px "Chakra Petch",sans-serif;background:var(--a);color:#fff;border:0;border-radius:6px;padding:9px 16px;cursor:pointer}'+
+  '@media print{body{background:#fff}.bar{display:none}.page{padding:0}.card{border-color:#ccc}header,.num,.plan{-webkit-print-color-adjust:exact;print-color-adjust:exact}@page{size:A4;margin:12mm}}'+
+  '</style></head><body><div class="page"><div class="bar"><button onclick="print()">Imprimer / enregistrer en PDF</button></div>'+
+  '<header><div><img src="'+logo+'" alt="Novogarden"><h1>Rapport de cartographie et de tonte</h1><p>'+(title?h(title):(clients.length===1?h(clients[0]):'Terrains Novogarden'))+'</p></div><div class="hr">'+today+'<br>Romain Marlier · 06 35 58 47 00<br>contact@novogardenhub.com</div></header>'+
+  '<div class="tot"><div><span>Terrains</span><b>'+rows.length+'</b></div><div><span>Surface à tondre</span><b>'+fmt(tot)+' m²</b></div><div><span>Soit</span><b>'+fmt(tot/10000,2)+' ha</b></div></div>'+
+  '<section class="card"><h3>Récapitulatif</h3><table><tr><th>Terrain</th><th>Zones</th><th class="n">Surface</th><th class="n">Robots</th><th class="n">Durée d’une tonte</th><th class="n">Cycles batterie</th></tr>'+sum+'<tr><td><b>Total</b></td><td></td><td class="n"><b>'+fmt(tot)+' m²</b></td><td></td><td></td><td></td></tr></table>'+
+  '<div class="legend" style="margin-top:10px"><span><i style="background:#7fd04b"></i>Zones de tonte (numérotées)</span><span><i style="background:repeating-linear-gradient(45deg,#ef4444 0 3px,rgba(239,68,68,.3) 3px 7px)"></i>Zones d’exclusion</span><span><i style="background:repeating-linear-gradient(90deg,#facc15 0 8px,transparent 8px 12px)"></i>Routes de passage</span></div></section>'+
+  cards+'<footer>Simulation Novogarden, robots Lymow One Plus (coupe 40,6 cm). Durées indicatives : pente, hauteur d’herbe et météo les font varier. Fond de plan : orthophotos © IGN – Géoplateforme, Licence Ouverte Etalab 2.0.</footer></div></body></html>'}
 
 renderList();renderTerrain();recompute(true);
 if(terrains.length)openTerrain(terrains[0]);
