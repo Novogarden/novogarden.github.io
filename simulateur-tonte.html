@@ -53,6 +53,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .field label{font-size:13px;font-weight:600;display:flex;justify-content:space-between;gap:8px}
 .field label output,.field label .u{font-family:var(--f-mono);font-weight:400;color:var(--muted);font-size:12px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:8px}
+.row3 label{white-space:nowrap}
 .area{font-family:var(--f-mono);font-size:13px;color:var(--muted)}
 .area b{font-family:var(--f-display);font-size:22px;color:var(--ink);font-weight:600}
 .tlist{display:flex;flex-direction:column;gap:2px}
@@ -97,14 +99,14 @@ th:first-child,td:first-child{text-align:left}
 .clock{font-family:var(--f-mono);font-size:13px;color:var(--muted);white-space:nowrap}
 .clock b{color:var(--ink);font-size:17px}
 .gantt{display:flex;flex-direction:column;gap:4px}
-.grow{display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:8px}
-.grow .lab{font-family:var(--f-mono);font-size:12px;font-weight:600}
+.grow{display:grid;grid-template-columns:104px minmax(0,1fr);align-items:center;gap:8px}
+.grow .lab{font-family:var(--f-mono);font-size:12px;font-weight:600;white-space:nowrap}
 .track{position:relative;height:16px;background:var(--bg);border-radius:3px;overflow:hidden}
 .seg{position:absolute;top:0;bottom:0}
 .seg.charge{background:repeating-linear-gradient(135deg,var(--charge) 0 5px,color-mix(in srgb,var(--charge) 65%,var(--surface)) 5px 10px)}
 .seg.travel{background:var(--travel)}
 .cursor{position:absolute;top:0;bottom:0;width:2px;background:var(--ink)}
-.axis{position:relative;height:16px;margin:0 10px 0 72px;font-family:var(--f-mono);font-size:10.5px;color:var(--muted)}
+.axis{position:relative;height:16px;margin:0 10px 0 112px;font-family:var(--f-mono);font-size:10.5px;color:var(--muted)}
 .axis span{position:absolute;transform:translateX(-50%);white-space:nowrap}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted)}
 .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin-right:4px}
@@ -115,7 +117,7 @@ th:first-child,td:first-child{text-align:left}
 .base-handle.dragging div{background:var(--accent);cursor:grabbing}
 .mhead{margin:4px 0 -4px;font:600 12px var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
 .fleet{display:flex;flex-direction:column;gap:4px}
-.fleet .fr{display:grid;grid-template-columns:34px 1fr;gap:8px;align-items:center;font:600 12px var(--f-mono)}
+.fleet .fr{display:grid;grid-template-columns:34px 1fr 76px;gap:8px;align-items:center;font:600 12px var(--f-mono)}
 .fleet select{padding:5px 8px;font-size:13px}
 .zlist{display:flex;flex-direction:column;gap:8px}
 .zc{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;background:var(--surface)}
@@ -141,7 +143,7 @@ th:first-child,td:first-child{text-align:left}
     <div class="brand">
       <img class="logo" alt="Novogarden — tontes robotisées" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAsAAAEnCAMAAAD4sjpvAAAASFBMVEUAAAD///r///7///r///r///r///r///r///r//wD//7r//9b//38AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgPjsqAAAAGHRSTlMA/AXQLXBQsI4BAwYCAAAAAAAAAAAAAABiFnRjAAAv7ElEQVR42u1diXbkLK90ABt3kvd/3mnvmyQkoDNxp+rce/5vZtxmMRSS0NI0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADUhnPP/zuicZgWAPiTbHAhAwAA/iIThNA90U7ougAyAIC/yAWh62P0G2LfQU0AgL9GBE+xoI3+4wDfhj/HBavVpOrA91oXyBX47Tsg9B9nxG7YGX9KTXqBwcQ5GGKAW3FBF/86FxBbtfboQQXAHbjAX7jAt3+JCybbadhQadeORtkNXYBNFvjdXND+cS5wrmv7uKDv+7atcZMysGz7fFvc0HcwyQLggl88B6E9aEnDTUrbOfdwpe/t/XFqfR/ABQC44BdzwdVg4odr1ZIZoA0xMUAwAMAFv3cOCOPpSAaNqz2x/o/dzwDggptxwXUCFjJw4AIAXPDHuWBQ7gskg+fshfYDXACAC+40By3JBbP3pcvngh5cAIAL3oELijyuGC5owQUAuOB+XDCSQaaaAC4AwAU35AKGCgaTwRe4AAAXgAtGk0HePIALAHDBO3FBvskAXACAC96KC7LJAFwA3JALOnABj1wvA3ABAC54Ly4YpiLHZAAuAMAFb8YFk5YALgD+BBdEcIGEPucuAVwAgAvejguyMsGCCwBwwdtxwWQyyOCCFlwAgAveigsGk4F1NsAFALjgDbngw148BjHLALjgHbnA7mUAuQAAF7wjF9jth0xeI3ABAC64NxeYTQbgAgBc8J5c4I1eBuACAFzwnlxg1RLABQC44E254COaAhPABQC44F25wBaYAC4AwAVvywWjyQBcAIAL/jwXmEwG1bnAkbjjivu5cfxQOz/8RTIbS85FVS6o95F1r6j0odVcYDEZgAvABT8wgz/BBV0tLnA1vuFv4QKDyaAmFwiDyx544arNmXSXHIervF3S+6hoxZI/eCkpZL6Y/tn5bytxgTD6jO67zNFlfgMDF0y+yO4HuWAdkJMOVL20svtdvtRWwj3CMB41FNPxbQ+uqcuTJa005JCmv3tkvP70HkdPvJG3loeYudi9owYXLL1eGwkh5C5WlTTDcnreiWfggsFk8Nn8IBfMa26c1K7r2hXdgOs8v146d9fjRNl244hxjCOZx1EsrYwtfS8zNqzDbo/dujyd386+wXYvCWtDYW0ig2pS32bdXfP8TfOmfuv6u/2cV+eC/Wd+NtSP2HprXHSXjxiISZm2x25RkaOrzwVqk0ENLlgXauiekxpj9Hs8/xyHaZ7nx1m+V00FTrccx2GQ4/CXcRSe1tOMDU0NbY2txRljOwcKPWDZyqpGmmXBL+3MLUxNbBxTTT9YVsIyf8/GBmN2egWtC+g851M3t/EUcsHymcc5OX/lsbvGxTq8az+5lxG73aScRteuoyvngucrS5Kk15MLxpF6XlKJ0zd1SeF9Xuw7og0hRy44HraKl7h1HD49jsLtslBO5Jp6rpRpu25oDxA7scmeYVzyZDN+GktwXxmG/rCAsEQ8d8ZxJaTL/y4Tz0z5frClXPBYWuNXq/Eju3B+lz+UNRxP/sukrI9O+6KcC3zPTaAufLmcC+aBtlHYQNsMh8QJ7XbixUyhUXGwUJ/nSPlT203itsc0jqZEYBmXRrKleQJOR5cf/6UXDMSz4CmyzcYHhsG49UBdMKzkrR/P/3yOzBO5OBvJHvs1fC+JgUc2eLgKXDBOjEQEBwJK79Fhz4fLiIcdtNpphjmTmMen1qaOC+KT19uY72VQygWjeMNRHkldQVx3biJZf+HOYLMMEXM/qE3C5hnH0erH0dklu31DvfcfZRg/kiwDqz7LsBSH/azdSSOJLb0fqGqXWm+aeZOUOjbMiQS7NwxbczDbFnHBk08aDRNsbJCcluGJa3d2XMDQ43l07tMSRtQyyY8DXYA56iangAsmgX9gAsMK7mXhdlhrpXWhOGeUIB6kTs0EKz3l3VQEU0Ni4mtmTpwz8PMsp+qunagzcC+BEv+c+nxulAk0JrBFiS+RC+Qj+tJkmvE5LgjrzxxzWp+UCstyorhgKqpKz/9Hr/AyKOUC4w5aOJDt2LjYaJXH4EpJF9zjmx2Fdus4RlazX7e4SkzAcUFeGxO1uUf6g1/X/bLRHb8UeS5w6UNzN+HLNWYmF2iO6OsWTVk6yNItfUjNCUl1roQLpk/f5+YyKOECN0qEvXlhz+vOseK9L3af6hg5lXzFRGn2cXzYNJdZtcyYMK55qvUsel53WtKsS637eRdOC9FkyZ452LRw8uUC5xpLa8pvzHLBbIRRUsHSUhkXjLaQyCVJV3zdTC542D7khQMdK3F5TjvWmjBIsYCXLDKEgv3+scgFXTUm4LjAePKZyGDQttnVIi17ngtsnZ0XTqZckDX9kzSSwwWNPCclZMBwgXCWKg7TfC5wrmBlz+Ieo+pGViJWHr+UmsGJqZOVN3ccsVNfB30PazHWowJyRNn0LFO0YrWIy56c/HEFWRXMSaQkuCBpUcpdr/xaVXCBgQo2i0gmF3SyTpLcQNlcMKpe2atuUbbVp7opLQMpJjGWNld4WKv1hBwB1SoX8KdCnZOJzpr9MdnJpGVP0lbWhExdJDafzAXT/UF8wbRIOsK3VezR1jTguGASzzr2YjH1dTO5oHRlMxPMafv8FZpSRWgZV89SuV0t2dWmAoLd2HWgv6cMcsQtKXKN6148Aa8b1eWuoOd8B6qpBBfI0++9eMUrfWOGC55E/TAvLd93ZVzQzGabmMM0mVzgXNkBxEukjrtJ+FDGWzG/p8UKV3BaHPlWIxX4qlRwcebjp8740iwuEIdHckHmhPi+p3aYbC8QiGdy8Jx8tL19WnguyDhltAVOBHuBMLMKy4edC+qsbE4ykJQEFRd0Xnng8Rxa8TBdWmKPpS0OYfQwlNvaBS10F1tB81XKBfLhwXJBaj1c1JmiFUTOkcgFLBUMDkVzMFgIgncWb4Z3rMqSI3BGXU1UiQsaVkZLXCxmcUFSKth7y5rXHbc/tU4PkgClbMo4kqSLp+OFdx8PUQdtMqijFWLhGsbuatY8bFwwrvtoVGeqi0mSayPDxEsswN4Lve1tZnjHHj45uqcyQSF/pyiuttjmWoazDrmPLaZmFLyiZCgm1SPWetgHnR8luVwD7ZbT9cLGm4XHdpIgpT2aVLMZ4X0NTNkHIbJr6PQw0QwjF8wBfyNG4UMkNt7TjucCWR45qzPs5tx1uN/1t5wLyL0xuhW65hDgPtzJRnr1cWln6Fvw2GfdGcVWYz4UuWAcDnuxKFtBW2+Ut/hTYIl820XXdsI2olnwuaRJF4OoKAPDXT73tFsOa+8aB7LPJBBE9375kmNc+uSIKP8EXrXtgzPz4BTvOOcsmKM/ZYoexvJt4gI2QG7tQecu0UFRlH4u/fX5XMD6tU9GgHNcOyPbc+cjxwXk0dLPoeO+0GIgcwG/sn1C6jNzQcOdpvMp931xLet4NYzoG7PidF6mtFDB3ml54crz4JLrPsVAgmcDD2N8xLIYr2kWOE2zD8ncOcfBj8H4Xdg//1iZjSXo1soFz3Y8qV0tuRjCJUkZL0csotJjJ7hroivY1eHcJ7kxpjPymvrtwWjAzFGk4oL5jAxr+hQ+NE11d57iAvFiUboRMXGBcHu0emhds/UF0Tm1qpLAWbqby1dvODl1DRTZhvFYjDLcT3jCnWbsg1+MRM4VmgymUQi5WQ4Tt2aMcIdQhT1De9bQx+rGKuPklBBkOdyJvvIkvPrbnJKAJSPguDXLCcyzl9iVCzhjBmM+1HDBMUWBOPm6+OIEFwiLW/BnsssF3EZd7l3ofEKi3OuUlraoCrbi8mXrzXmTSEtvUs44PEaGsOEOfHwE6ZnLxPulXeue2lU8HK/7w/WSZY+zrXclXDDpJCGwwf/CzK9KE7mCZFscvWZZ35uJChyva3nttXSSC/ae6o9H0tukr8IFUviyYAW16giS9MExc8PHTATqxHZ9lrsRryJQGoKUBYYZSJMRIs4o2a0Uxtt8Ec34lGC0DWqR0ZyUW5hbj+xqVHDBkgJk19C3u1wn9tLFEqn9JP15GS5gWvNiDsCnGEi0RS+/JBcwmiBrMlGdeG3q2pPX5HtembLdI7BK9kIF7BaSvKGIjUorCak0kfRivX5452Txhs9U3ggTQIsFvE+0lHqdpKqUYDC15ZcsHI2T8ozzvnjS/VniwqDfp1CcE4+cHKL4me9XzzlqmSY8N5nziw1UE7ngm/xmTDCYyAXzoNw1e7QQUZjkgpDmAj5ikaN6IxfwHsLy5M5R9VHZNVZJSAaTcyFs6qv4VDp5J0VVMwnCWWum9T4k5dU050xa0hQ5TQyvN6zGFBdcLPOMyNOzu0asMiI6JXByAaufyS541KUnuS14bluXU8MVRmiZDVGBCwQXDs6J0sYFCQfhZFxjqww04Ow9ad9o8rtcJ5f9gF41EFJYZX7KTFmfDgkkPqVCflxFUGW8FDWUPC7wpGVevXV6RQICgQx8p9+oc9oP88xQu1TkAinpK2uE79PJPUObNjryWjB3apnsBYzspPIP5mmdMvIz7ciUOQqlvYJBBM8s3UD4PGxan+hOky4n5siPu8nQxHEZYjplLvCr3S/LAzN2Kh5h26e5gPE2CaqsLVF1NS1wAW9DS5nIK3CBEKlGByaYuYA+EnV5Vhmioq389DVc2r8vahxgXSNZPZr0ycuSWuNUokrUBJMTU6DzRHGGJNakxTyHC/pOkTZYmHlNzmHWoY7nAs6UrOhoT/tk6rkgpvRNzvGhDhew/sE0GRq5gNGyY+dU6RGd9rTnJljO1MT8qlXbI7Te4A3/Ea93IpSoknaVGDP2tnlyi6XUoto1K8UFuqwuu1tPwt6km3k1FzB86hVCODMzzA14ywY0NXaNdrrTrcAFzz98cndllMnAxAXCDm202fVb1R5ipUHxXGRuETqKC0rypXBXA4wbQ9CoLcrJUvpeWrjAkCNI4ALfamm0LAiV33g0F3Cjy5uZaOIChRmaW0ZVuEC4WKRMBjYuyNmgihdQ5nGJNqRbBK+w0rHJltugr5rVM26qNbmgizk/NIDpXgYX9NpqHFyaa22mGi4Uk+GC3lu3qNRVYvlJt9Pp6FXO86QOFwiBH9RIHjYuYHhMX0tXu8Od+uhN+D4YLIeGXMtM77QCTuwyuUDlh23iAp21NcUFuqlj7+LVMy/sPJILAu2EquICoiVim/I9Sg2K82+syQX8xeKVfa1c0PoCscCywzkjk0DqtDXjam7kVR1lcWqR0WtyAfXLqlzAaSJWLlDn42n4azT1zHdRxwVOSIyYOzP9hUdKrqcb9sazmlzAGliuSp1FRxDcOfVc8MloGY1SMBCrcXHOBU53SaFOcD4uCBUtlnAB2c0YmppUUIsLtMUMaQlfv4SEVBAkF7Q+m3dIJiHvpBguYMM6fo4LxiYELaFxeVzg7LuTml/HxIMSMcWMbYH1g2Eth+cffFMr0lCaSWaql3KBaoWlPJGO3rAVuCDqbgEkFaHR1+9svZYLqN5qjUK88VDHBXy4Z8r9oZ6OIEbmnzMJVeACiwbLlUJhDD8cbXDJ1DuVc8GD6UNrLd/q03cWhVzQZp/Aai5wxM2llQu8bg0UBaMn74OJ9KqfXMxqPhd0ai5QDIrlgiy5QPB75S4WvxqXzQVMsvFvw4dkzmTt5TB7MAonXKMmGRupKYKjXyIX5FR3ZiME6Bt4IxdoU1EW/Vz2cSFsNZzHpxqhgAuyr4qqc0HDxdnH42o1ckFPH4XfetmaWU00iXIhZkxAILfpdFJTb6mhPpT/ppbk+SUld4p1uGDNxMLIBVTsn5ULDCmqY/7PUxfC55d8k6G9cQmGHDIJPNwusvuc3oHiArVVosA8XJcLJF/ko3+YzXZoqU0mLHDyUNY6k0spJaLGUMQtJr2rv2ASJ+uX5Bapq2IvWEOV1gyUcxbBJe+y/yjnAnXpClazNklkmnN4DAum5Uqlk6zOv8NJt2u/gwtYz+3jT+iZZbkgFn5IXqIic509AlcBSasiMHkO+wLnSXEgUckF2cqk5R5hl2RuzHA4Jt7sY0yXYzByQV/GBb2JC5QyOef9Paey1GgIXD6Tm3GB5GWwtzc6MvecIebL9iFZU7JnIsDULepv4xmF03dVuKDT1TVTbGmuHo++3PQq6nZTMmp9jm4zFzT5pSsGiczIBZ2SCxhDZ7uvSEFjyoPvP/K5QOPR9ENc8MRXEHyRzVzAfYMMLog6LjBpJXqPXZPqYR0IXSysz7lF07pLSEKum5I3W2hAaoXjAr0nX17qOoXVluIC1s1GB51fsVS/MzmWB+cpW5kLeA+tnYd+ORe0JqO2FI/xMNxc6B6N3W/ggswYI/IU1VrsJ4vYWNMhp2SHjQt0m9mJ1wimRRTKuKAAlbmAdK7N5IJExSuX1BKKuSBDzQ4WLghMqkCVOxqnTdDyzXcFLvAkF2TEFRRcRq4ufnwNhP/EBS7oc8CII+uVXBD/Hxd0v4sLGikv8mJVsnBBW4cLOCu+U7opXgVsSxYg1tZzJSM7qRHnNl0eQRO4onKdYn47FgbMrlj4u7mguQEXxO5Lk93np7ig4dNIrxnby7mgq8QFQR8ZSWRt4FUEAxe4F3EBc6uYKoBNfbtWJ4u7rMKe2VzQ/TgX+N/PBapMX9yFc30u+JZMBnW4IFbiAjqvDVNyiIi31CcEq8gFvZILvoyCwVw7KWbvuq4t2wU2LohlXGCIcwUXFMgFbGz1HBn2i7jAkEnJE1EV6rwfP80FvIsBe5U2ZZDvc7bNpB7Ewnrmv5kLJGX1Z7jA3ZELEnmRp7VYygVfL+QCSUlIzilXDPN/cAGTds8RiUqXqjp9RvbkhQqUC5u9O3sXLqh+j6COR4jh93EBl/Fsvo2k1dJfoyMoXX3Jl3IxyP+FC+jU3LsiQ6tm4OY7gEj7cjzS+kHCUjARwFwBeSz5ez8u6MEFGfPI56Nv5+BfZQBMRdthNJ1ECvc+dTL7/2E7nM0Z1NxFzh+2Y2ubfScS67pO0A+GuqeL191SAdnRXGviAlU+qP9hL6jNBVR+0YKMKT/PBWIx0EcpF9TxL/iwVWo6VmR9kFePbMGP4kxtEhcIWWP9B80GB4nI8X4BU2pWl6ICgQi2+sf78DS99wPLBUW+RtE888o7RS4J0yQWnbHKSzyeE6gN5f+NXMCbDCYt4eEMXPBaXyOOC7iplvlieiNjgniZr5EgjNCy+7hDty0aRldBbbZKrQy4EIE7VTmd2+x/jAtchTtFAxeQsUmxT4cjMAjBaXOfqvNC/ywX8FoCk7DBFo9gCfsXfZDZys7MnluLzX+zKoJhx9hPJxsXCPvUj6r7FA7TsyJ+OoSBdSfxsT3UP3ZzesHpvwxc8FBe8bJc1VbgAq0PMh2zHNvgcvGl12J/JRdMvshsuXOlJ21TM05RHZvEyzX7Lz9UdiOyV3Np7SrGIzDXKs54aH/swmV4q1Wbrw3OJdibS74OLpMaf6tTygUlpXZMXMBRj6ZokgU34wJeS+joYgocF4QqXMDWjWLv2jtxrsmOJcgl13lOtQS4Zl2BB1C60iNP+aOV+Ju5p2Fqhf1aLtDGKfKBnq4A95cL+IvFpwrUau+xK+U1YjNCSaKvcIw7Lnm1s+ubL+SC6dyOr6ICoSRRt7iVlXNBsY7QVclloktdyyWAcM3f5QK+qOloSHlFNgHr5bCYoiOR1JQM8BB2tpB8otyC1SaqQGdGCcQ2uV2+mUO375xUb/WnuSAWc0GjzTWatjT9PR2Bvd+eFVUlF9TIg2zMfSqZGNYFRKoIUkmVOklZePcCq60kLRRETU5/xm8jQdU/bC8oSZ3a8NTPcUFgsgz/aS6wHUkmLjAlt2dqY0opOlKR/Mr6NkmFM1aQVEWjQy4XDEf7Z6o/D6lSpbOS84u4oCyNskwoZKQA7Zryt7lAKLhq4gLuIqHQ+i472suRR3QNzOF9D8FxrfQiIccjWyhhkxIKklJtdn07LgnMi7iAK2RZoVZKW7mGWuFK+I2+RhqXNDUXcAYDdT3FB70d5DOZX69cr8RpYVIDWGuo0buikVLL2MWCwTNAkxk0+6KUFqRfxwVdUWlV/jKCq6ddHEHzflww6pPqQ4mzHTIGg+I6ywmHJdr3cJIsSaFBzgoo3mUUDURo1+VoCL5ffYSydohCNzZVdi+2F/D1z5wrra1KZI74CYNBIReE/8EFFpMB71VPKglaonXSDfO3rOEERkkgLyai6LjP+z4aSI1PvqbddF4qUDA4I8a+XaKaNbuMFtk0VRj8D3EBdxVlmHmh5jqZRYbsbvfXuaBhvQwsXFBUdF3KcpVKBErwWD/fFIdocxUoT7bleBVBIIPjEGI/1y3qjynLpwCZwWc+zNmMy/rjcgSKF3EBX5NYP/N8pVBted5z9ou/yQVaIVXggqIQP/5ATicF7jjXwuu5lrRL8zYsnayqTKdxukA5/MK3azTSVMpk4IS+n3IKzKFKiyyVywXpKx4jidTgAsbwFz6Vlc24NcxwASPI/hK5wP0nLpC8DJRmfc5C1aq1PbqYYpd0r6Wth1NozWVMfcrwXljkkwnuE50azi3u1InHrsxhCMdql64p2GPpYgr83dDLuIDW9vXVWbmcBNRgWUG24lXCXblAazJguYBJTd+rDFxM+HFCtF5/TVsPia+d9ibmJE2vux9lBuJZpwY3FH84/mLvFj/16Hv8/5VstNa0Yi4wJHbhbpL0XMDfAgRX8HN+sJyV2L2aC9T1ET7+k1ygNGXzXMAL17qwiNzTmHUxIP5eEcctdOVTxQW2C7xre5NatBGB24kcS/TAj3CBNftkERdIaba6tNFJXL9kbWhOKe1DNTK4KReoY+UkLsgy/olSSa/1pSGzm17+emKIPG1FtUiYgQi5Rq7r5bBNFREweZtEU5ypo6ugv44L+Mw6TsHgrFzLcQHtz9JaycA5915coDUZWLMMpbWEqYBHvg15NHx6Sh657IHY6RRPzoiVLnNIE6p0sl0ut5R1EQu5IIor3gnqO5s2tpQLHvydYCK9v0wFHBfwAqDFvcled+AOXKAyGVizDCn2EBux63tlhizKbyS219WhiY8QdkHqxOCuYwS3RXcNHKrPBUwdedHPgq24+TIuuN6tKmd+Lhkh5HXtmbuvwIVv6i2zzsnhMiVcYAt2rckFusAEkQuY0128j3N88H7UXfAwYRzXKsIqi7RLKa7SQASrh1oUfwEXmA3mgvr9Mh1Byu80zzxdPsulsr2zXMAcXhMZJNUSt0sN93ZcoDEZSFzAVaOJ7ZpR76oeNCwVjEa0mnZPZeixlB86bJUKzgTScFQw1UfUR0n3IW0eVBsQZO8pTtsT/E1exwVSFodtCR2zsc0lI+RlS3MBL/us1SmcULtqFUm7ru2450q4wP1PLmg0gQliCHEjpNKiVu7sUsN8SW3WAG26e0N6IvZ8WgZC7kxmIGLBa2K5rNEUNbiAvTxjvafmMgzc7uJ0hEcNHYEn9dgv1bz2+B6nPVkCpnc8f3k27Iud3q39KTX1Uwf8ejO5QGUySHAB5wW6Y9oNj0Yq5pOMrz+SUNrsqY9CY0ltyhV6GUgzDyRabl7Y5bJcqOsSaiUZwYk2slMBhvkmUzhoI33bX4sL2MNol7D5aPDu+lSJSIELWFfFOeCjYSd/JYL5E78dF6SlbVGblXj9nIN/EYS4Yp/ecLfjmk+FkqDPrCKsSU8NRKhikrgRI5cLbWB50GfTuqpFguc0nsPLdtvLm53Q63CBFBizVo/ZnctBUzZacgDnuefJBgv3PKf+8Xisn+BSrIK5q741F4i5+lVcIJfk2H3JTydtIMlTj7uASQkG3pAiRxKQFjbYhjGsDPZwksdBX+OPAclUUt7v3S7Y/JKdk1ySuSyAq3l+RyuzyB0T09iog9Oi/TKrldLDL+VjwhyrcZl1b1qzoiC8/9AH/g1hEQjkvVafC/wPckHayyBh5ZZ+PsbYdat3/RCIx0t3dq/JFBdEgw9JuuTYuiTHgMIoljGxS/BTjZRum6x10obmxnClFe0sO0t0wEvCm5CzKcBJSiW5oKnEBYn1N8ZzT/FakSDR3tvkAvEKwq8LduXf6XN7r1mtZTXX3f/ngoTJIMUF8s/XOkDDtxSqf5gzzDjmCiP7qi6hLY3Bw/20JBPjSCYsZ0Nq/ByduBZOmlrz18fktCZ0sqb17OuCdNBqdQRXhQsa2WsoqQyErrdxQSpC18d4+AT016aX6+25ILUJEltKY34UiwDZfb8aPp+61bngqI8X1C/R+yom7Z7puknPRyZTl8v4pCurRZnVfowLvvMyQs+zHWwB4wlD6ekTGI+uu3NByssgyQV8Sgk91JHOBqOnLa95bjpSk/OsyTki1dRTNvhkQyHLP0kmF2QZsDMnZDIxWbmgqE6NfF19ey5IeBkoA9x8GRUEo+Pd8/Ev2cVAMYvVSU0To+l4017GrDVNRsFGST7+D1yQSwZ+qvdgDsp0rpwM3pYL5JivNBc0hUw73nXZb0DkHZWT4taVSQaKikbrdFc5sVlH+jwZJ7bUhZ2ZC1zGp3zuaJ81+owA7eL1+t5ygUDMGhOcxhcsY0UX2foyDyjW/UEltGuL1VTREtbtwMh6xg8yvoxZjq/lgiYVayRIBXnJGkq+80aQ78kFAlGqzPHjx8yj2piZSyJx9PksgmkyFuV+HIac9FXIgLe5mk0GE68wabboGKFaOkLOvPs5GVQmFzSu4PaCPWnegQskk4H6ai5LNPB9F1ymYiMKBn1uftu8I8ObTB41zJSJdTZ59OnbmPtPl+ug131NLlAEHF0tMwVJnKztEbxJvfPxX7jA1+UCIbKgVeYAbUbRwLbClZWAOGoX3JzabNsJH2iQWhzOFqBXx8zPf/VvAxkspg4ye1wwcUHm5xymRG00WLubzQXuka3X8rzPcUF4JRe42lzAC2l6uUAXN3IVCgr4ixUMrBeKR3XHKBr4qE2gvnfaqyUYSBXllUffRmXEeuTk4UG2oYTn3FwMk9yumffZMuPYxC0q15JHngjoI59Gnbki6tVcQAtliR92phx76i9hLXVKrD41G6yRYdnsxUvasS1LDmJaJaMXYGOp0V7FJ+OgDbkSvW2hAkdGB7BcQCsUoSAvi+6oXo5ll667rWjPxgZyJTtab/VqLiAVtEeSC64xGlbXPaVkINUCo67Op+n1aXZdioIVsBcbjl6W9H46ILtWs1sXf2BnKzBdZLkixEg2hPa5wFJeobOfgmMWJKcjkOve6OxJ91fcnX5m3p2jnM88FZfl2ntdpZB10YpOjZfpHvhRl8WzjRm7b5qxHeJ8OJWchcuHOL7XVGRqDpkJrRh8MEWAlDHB7vbi6Cw697ksz/V0TIakt/4SY29r7Cu9QetYDObVLi32S/HmUSKaZnRaAT17xsyPLvM+Phz0NWmZNSgdJvNuPOZzCOc123fO/p29ggi6dE3LSc+5dkdnfW/j+bdBEeA4hv2t6KaI16YUUwan03uNZ/XaPTKYb53TWcqr0+FTFF8onwq3JCngl8kSlG3mr7Mg7GN/Qjwg4RufspPyu8sTeto06iEsZ1kB0iG4C6Icnw51FuGoafrr0uGym5zWrDnF+Ryl5UUe2GsmidmeZmXuT9BH4u9GsgtIVemcRYn02VO97MVbgsiwlAuNi4wR+61OaFOpQoU7VB0LodpcuO3z7AaxDWX9UtZQipNBz+/juvexyhvEkDn5/nTJWzSP4jQEWjpbpzSdQulS8s1Vmfdld64dHpfOfDARbFCwYt12eo2lLOP+U0/h0vNRuzSlsgblzQmRqyJ7J9dggzrbc5uUZTEP/7sOr1apmmPyr1cMYxvF/uhZR+LMcsFJKBgVmm+Z5p2caiChpK/pS8JxDCGQI6AKC/DC0wuwJVlZZ73rOn6+XWG/dt/ZLSy8fudu287OudcMmOq3azI4pJpUsOvDnJ2whJbOqWGOCbqaqknAl/4+qs/F8nncFy0uGU0ehPdxXJxmjlkhWVnWmLpj6SRJMuPNmkucszb5tBK/OyL14DqD1bfC7isK2Q4NvO/WlfiwlylYNt/DNf+ZC6p9XOb3lXv7Im1J0127NErEfYyXn04FzkytcfBxQgbk1JSaJr/qvKsnvLwT4i+tby3SWF62lP8/3mJwiczEhvOuO5dMCl96yxJb6CzqSkK7m32Mn++tq/OlAXBB2k58OtUt1/FL0lPO4d2BC8AFwE0I5bKPfU6J306dYgAAgF/JBVf53u6lx0ewgAsA4D5ccC2kaL+SZMKKwQUAcB8qcH3xFua54AEuAIC7WAvCK7mgARcAwF244Gz1ywjqg44AAO/ABf5VXIB7BAC4Exe0NbiAvEcAFwDAnbkgYwvTed1iUeoWAAD+Nxfk2A7phHoQCwDgxlww+RcYK8pyrkaYYgC4LxfEzhwAF7LDEQAA+LVc4Ntgik1i6i3lJ4AHAOB/cAGXNliXMKThSq/5DjwAALfighCZurKK2rVzCRdfu3YeAAA/TQa02W8uwqNJacTUVIC1AABuRwfEsX4ozneigIfbpeELTD20sRIHAAC3EgzI8o/+Wv7jqhx0bNkWaAgAcEMlgS7/6JcM/Jcs6GOK7qk0grHmOgAAv5cL+LrQY2WeKR//oUDKXN5EqDPaISEfALyNlrArSHhCsuRwByYAgJtqCbFaTdXy0toAAPw3OqhIBr4HFQDAbbnAhS7WKbce2wD9AADuqyZ8uq6vIBrEvkMUAgDc22bAVEi1qQejUAAmAIC7KwptARv4USYADwDA7ZlgjC1o+xy7weiIMDEBbhMB4A3YYPQrfrKBtwkEMxF8N7AUAMBb2AxmTWEKM/BKxWDggbnoGpwNAeBdJINlSw/xBoOn8ehrfPQ3XP4QBxqYeGD9NaYQAN6JD2ZWGASEOQBhCkJYMP6xW+KWmi3BEQAA72Y1WMUETTITcAEAvLGuoNrczoEGAOCPMEJaMAAAAFwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAaDvjzwC4AwAUAuAAbe8D3WGgU0/bX8QB7vCkdNDmpO3E4vj++sKf/hhQg7+1PaY0EJbrboVXg//ftdW0oPqqKRT7BHPflhsQ23m2FnkD8zziUPlQ+9t7YDTl7VnsaKU6SaQO77rfu/G2r0xvbVmAU+CNIEO/GGSw9YDv+byZYNv/uhL/ueSx1oBpP7EWJlRdABr+DDPbyPyP4k+J1iYCNDfJbt2uZApJSLY6KxFE0wIb8/4TwmbD6qAx/rR4mkwJYpfoel4wAbR6UtkdcL76PXeGr5vVUsCGbemRCegvYdmrmRQC8kf7UpeLv/oSvWaLhN0LbzdttyUcDpng/jjDhcwTOljt81+07Vflk+IQgh+pLiF9Fj8d27AzesM+/GByjH4/ZMXb5X7c5yj7oQ+v/nJVD/599fJT2YR7j/KrH47d8S2weAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADSQJ0DAAAaqUwNAAB/igrGyrYBlAAAf5wKurF+ewctAQD+uFQwMIF3UBUAAFTw0YMKAABU8PHRwoD4h9eAqXr285++UtdO138mf6FrWNs3t/bMZY9e9bhq+JaXpt5pmKfkG6R/D/6pH3TsraJ6kaAE+9+gDfq/yVPmv/WsyV6EieVrGL76pXnvLPhqTnjuq0IPtK0Bt5ELHLO/Xdc+Md46cR96POQad2kiq90vVde2nrWdszDR1+XFTqQ37fCPLy17p2qi+IN4eG3YmiA6kyufMV8i0Rrwa5XET/9BoW2ue7dxbVwf6AP9oV3TnmzRz/8czdOf++eX66szjkbs6WUnxGvXms9dz3wb1KM/vN5HblDW4e9f2reOe6ninboP9HyPp28Ank2EfvtV3103+fTbE8LxTaqHNK0Bb8AFzz+2x0djaBy7GeJ2api44CODC54L8DSIXiedEq+PT4X5QZ+uluGfJtMxvJF+p5oL6NvA5zz0J27qTs/Mv01yQfohTWvA/bnguRiiQnjYNkPffP4QF8wGcP4tFi4YOu6oURmHf+qyy31nGRc8m42KL1uJCzStAbfngp2MGPu+9/yXXjfDeiK8WEd4rsBVxO/76Of93ORyAfXjjOFXemchFyy9GVqYm3Cv4wJFa8AdbIdhOcAIs9Dzz36W+aZ/WLRCwqywboYwSwYkF+yMUXF2e6XanV7WilazucG5Z27oWjBxwfz60PUnFssf/tLj9Z0u/52KD8RwwbKDY5hf1MYrK62/lSc5/ZCqNeAOmJYat2mmhdp/rt4Ds4pOKLjt6YhnuGBFP71H2qzifp721O5iPLTKBXh5/TQof90J1uG3p3l9/sVn9jvTH4jlgm7+zbpzu8Buc3mm0g+pWgPuJxeQGnm73hi7ZQtGx3LBoiVzXFBHLlje3qw9c+qbrMvr53FeZF/z8Hc9nvZ822RPqeoDMVzQ70ONuJti6sjPeEjVGnAHw0Gg7+umf4zzP7rLYu44FXW1H8pywfzuTrqha8Ub+nDum3oRXl5PdyZj+LtXupbmAv07NR9IwwX0BmXvIKwPqVoD7s0FiyJ4PC7nTx8FLniu6s8qXJA+sYbOmZeebuPmDH/r8de8Q2hNXvXOUi7oG2luyCM/5yFVa8DduaAl7feBsorND/eb7ltDLkjbC3y3yNP1ucA+/Iu9gH5M984CLpjvdye7zafLNQUo7QWK1oC7c0E/n3Wnv/f8xVIXVvthZbmAOY5Gf0NnUhEoHaGnuMA+/LXH8z3CVUUwvLOAC9zmAeiYqakoFyhaA25uL5i2aziZwh0j/c77q93sh6VcILoRrZdzY3Nt+NI7wZ+5YHnVuTP24X8k/SAN78zmgkNv/OgRzG5z2R1C+VC6NeDWXOCY04q2kK8H43Jn1lTmgpBwQfat067B8yE+32+efR8zhn/2jrr69xjeWcAFq9C0elg37nVcoGgNeAsucCYuaNxXXG/NXsoFQwf7s0+exdeoW1X7nljkWcM/kwET6uNezAXjpb9PRTzU4gJNa8DNuaDJkAu25RNeqyNMPdzH+zExBbxRtO3btu37uPhIHbMh5Aw/wWC2d5ZwwfAXXe+lgKKKXJBuDbi77XB2B/pU7OKNC9aYIfdS2+FqLnS7VdjlxyYRmyVj+KuDUNd+EL6MpncWccGUIiG00X+QVFfPdqhqDbg7F/TEObAcFY6XC+b4o/jKO8XNgjj+zywe6HL5UlxACdE5w9/9FWGPNL2zjAvWqQl0uEW1O0VVa8DduaAjZeeOct7f2+ZX++ELfY0uq7DVy6YEF5DGtYzh7zvcXWfW9M5CLmhOAQ9980K5INUacHcumI62Y5isI/7yzAXzRv94oQ/yqiKsqzCqj6PNXvDEJFG0fHCxefgTvl2ggrEN7yyyHR4cgqnwpmo+yKrWgHtzwXp+7g7b9f7ISZvhe3f3/0IuOC7C3soF8z2C4wSK7OFPf/NJVSCxvLOAC9w+KGDO9PA6LlC0BtydC+Yt7UOzyYctlwttvxl2OYeq2Q4vYXxd73bpEBYvHj0XtHtZ3pNZWs3D33e2pzOwqN9ZIhf0XbPNzTRCjY6Qk79A1Rpwcy7YtvR6FT/f6EcutciyoLf8RQVc0Mk9j6N/0YKWVbkTYsfcE/La3Dr8XY9dS97AGd6ZzQXjb+JWKZX0qlyDvjW2w+QSSrUG3J0LNivb4PS/ZeshnVtOfr3rL/O5YFLoV4Sj5h0W7+OxZ9GQZu/EBXOytE7IXKYd/tbjyLtLat9ZwAX97A8c9reb5G8/DlPcd/aHVK0Bt+cC+ire88r1zsd/1oJr+Rqdnj35vX5IZ2uir7yWYB6+Jk+q+p25XEAnKewuMRDUU1GT7zASORcTrQH35wIi8ThdhXMVkt1ZM+a4oLdywVEucCFmUgEhw0Teoc40fFU6YO078+UC18pEWpMLdK0Bt+ECz38713wdsvkzkSdXN9plHWXJBX1KLhjQHdjAq8uDnvsqaAnG4Z/KpQRO7le9M/2BeCcl16YCBKpxgao14A5c4MbCV+Ijg5vv6F3q41CbiLNxDS/ar4KhmM7zr76Zt3bn5y8vO+Fy+u06NsfKqgnw2Pbc07Z4+DtMxdFKplTzgdw8M9cGPheP4LkF7renXuc8pGoNeAu+WExs1kwV7sc69lXYnHvF8KUdnv1OU9PfL2zh/7UGvO47phOErQ8kfIEdlco3q2FtSc+9i0vJoD8TndEOX112XfVOxQfio4XSLajmWP0hXM6HAG7LGXcls985/Jd33P3oR3MOyU8BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABy8A/TGFz8wzcCXQAAAABJRU5ErkJggg==">
       <h1>Simulateur de tonte</h1>
-      <p>Vue satellite IGN, parcelles cadastrales, flotte Lymow One Plus.</p>
+      <p>Vue satellite IGN, parcelles cadastrales, flotte de robots Novogarden.</p>
     </div>
 
     <div class="sec">
@@ -217,21 +219,18 @@ th:first-child,td:first-child{text-align:left}
         <div class="field"><label for="speed">Vitesse <span class="u">m/s</span></label><input type="number" id="speed" min="0.3" max="1" step="0.05" value="0.6"></div>
         <div class="field"><label for="overlap">Recouvrement <span class="u">%</span></label><input type="number" id="overlap" min="0" max="50" step="5" value="10"></div>
       </div>
-      <p class="mhead">Lymow One Plus</p>
-      <div class="row2">
-        <div class="field"><label for="runtime">Autonomie <span class="u">min</span></label><input type="number" id="runtime" min="30" max="240" step="5" value="180"></div>
-        <div class="field"><label for="reserve">Retour base <span class="u">%</span></label><input type="number" id="reserve" min="5" max="50" step="5" value="20"></div>
-      </div>
-      <div class="row2">
-        <div class="field"><label for="charger">Chargeur</label><select id="charger"><option value="10">10 A</option><option value="5">5 A</option></select></div>
-        <div class="field"><label for="recharge">Recharge <span class="u">min</span></label><input type="number" id="recharge" min="20" max="400" step="5" value="100"></div>
-      </div>
-      <p class="mhead">Lymow One (standard)</p>
-      <div class="row2">
-        <div class="field"><label for="oneRuntime">Autonomie <span class="u">min</span></label><input type="number" id="oneRuntime" min="30" max="240" step="5" value="120"></div>
-        <div class="field"><label for="oneRecharge">Recharge <span class="u">min</span></label><input type="number" id="oneRecharge" min="20" max="400" step="5" value="150"></div>
-      </div>
-      <p class="hint">Valeurs du One à ajuster avec ce que tu constates sur ton robot (coupe 40,6 cm et vitesse identiques au One Plus).</p>
+      <div class="field"><label for="reserve">Retour à la base sous <span class="u">% batterie</span></label><input type="number" id="reserve" min="5" max="50" step="5" value="20"></div>
+      <p class="mhead">Robot MK II</p>
+      <div class="field"><label for="mk2Run">Autonomie <span class="u">min</span></label><input type="number" id="mk2Run" min="30" max="300" step="5" value="180"></div>
+      <div class="row3"><div class="field"><label for="mk2R10">Recharge 10 A <span class="u">min</span></label><input type="number" id="mk2R10" min="10" max="900" step="5" value="100"></div>
+        <div class="field"><label for="mk2R5">5 A</label><input type="number" id="mk2R5" min="10" max="900" step="5" value="190"></div>
+        <div class="field"><label for="mk2R2">2 A</label><input type="number" id="mk2R2" min="10" max="900" step="5" value="400"></div></div>
+      <p class="mhead">Robot MK I</p>
+      <div class="field"><label for="mk1Run">Autonomie <span class="u">min</span></label><input type="number" id="mk1Run" min="30" max="300" step="5" value="120"></div>
+      <div class="row3"><div class="field"><label for="mk1R10">Recharge 10 A <span class="u">min</span></label><input type="number" id="mk1R10" min="10" max="900" step="5" value="70"></div>
+        <div class="field"><label for="mk1R5">5 A</label><input type="number" id="mk1R5" min="10" max="900" step="5" value="130"></div>
+        <div class="field"><label for="mk1R2">2 A</label><input type="number" id="mk1R2" min="10" max="900" step="5" value="270"></div></div>
+      <p class="hint">Recharge = temps pour repasser du seuil de retour à 100 %. Le chargeur de chaque robot se choisit plus haut, à côté de son modèle. Ajuste ces durées avec ce que tu mesures sur tes robots.</p>
       <details><summary>Réglages avancés</summary><div class="inner">
         <div class="row2">
           <div class="field"><label for="turn">Demi-tour <span class="u">s</span></label><input type="number" id="turn" min="0" max="60" value="8"></div>
@@ -257,7 +256,7 @@ th:first-child,td:first-child{text-align:left}
         <input type="file" id="importFile" accept=".json,application/json" hidden>
       </div>
       <span>Terrains enregistrés dans ce navigateur. Exporte la base pour la sauvegarder ou la passer sur un autre appareil.</span>
-      <span>Orthophotos et cadastre © IGN – Géoplateforme, Licence Ouverte Etalab 2.0. Base Lymow One Plus : coupe 40,6 cm, 0,3–1 m/s, 3 h d'autonomie, recharge 10→90 % en ~1 h 30 (10 A).</span>
+      <span>Orthophotos et cadastre © IGN – Géoplateforme, Licence Ouverte Etalab 2.0. Robots Novogarden MK I et MK II : coupe 40,6 cm, 0,3 à 1 m/s ; autonomie et recharge réglables par modèle et par chargeur.</span>
     </div>
   </aside>
 
@@ -282,6 +281,8 @@ th:first-child,td:first-child{text-align:left}
 <script>
 (function(){
 const COLORS=['#ff7a1a','#22d3ee','#f472b6','#facc15','#a78bfa','#f8fafc','#60a5fa','#fb7185'];
+// couleurs des zones (différentes de celles des robots)
+const ZCOL=['#84e05a','#2dd4bf','#c084fc','#fde047','#38bdf8','#f87171','#bef264','#e879f9'];
 const CUT=0.406, STORE='novogarden-terrains-v1';
 const $=id=>document.getElementById(id);
 const num=id=>{const v=parseFloat($(id).value);return isFinite(v)?v:0};
@@ -435,18 +436,26 @@ let N=2;const rb=$('robots');
 for(let i=1;i<=8;i++){const b=document.createElement('button');b.type='button';b.textContent=i;b.onclick=()=>{setN(i);changed(true)};rb.appendChild(b)}
 // flotte : un modèle par robot (One Plus ou One standard), chacun avec son autonomie et sa recharge
 let models=[],zopts=[];
-const MODELS={plus:{name:'Lymow One Plus',short:'One+'},one:{name:'Lymow One',short:'One'}};
-function modelSpec(m){return m==='one'?{runtime:Math.max(20,num('oneRuntime')),recharge:Math.max(1,num('oneRecharge'))}:{runtime:Math.max(20,num('runtime')),recharge:Math.max(1,num('recharge'))}}
-function renderFleet(){while(models.length<N)models.push('plus');
-  $('fleet').innerHTML=Array.from({length:N},(_,i)=>'<div class="fr"><span><i class="dot" style="background:'+COLORS[i]+'"></i>R'+(i+1)+'</span><select data-r="'+i+'" aria-label="Modèle du robot '+(i+1)+'"><option value="plus"'+(models[i]==='plus'?' selected':'')+'>Lymow One Plus</option><option value="one"'+(models[i]==='one'?' selected':'')+'>Lymow One (standard)</option></select></div>').join('')}
-$('fleet').addEventListener('change',e=>{const i=+e.target.dataset.r;if(isNaN(i))return;models[i]=e.target.value;changed(true)});
+// modèle de robot + chargeur, codés « mk2-10 », « mk1-5 »… (anciennes valeurs « plus » / « one » reconnues)
+function normModel(k){if(k==='plus')return 'mk2-10';if(k==='one')return 'mk1-5';return /^mk[12]-(10|5|2)$/.test(k||'')?k:'mk2-10'}
+function mParts(k){const [m,a]=normModel(k).split('-');return {m,a:+a}}
+function mName(k){const {m,a}=mParts(k);return (m==='mk1'?'Robot MK I':'Robot MK II')+' · '+a+' A'}
+function mShort(k){const {m,a}=mParts(k);return (m==='mk1'?'MK I':'MK II')+' '+a+'A'}
+const MODELS=new Proxy({},{get:(_,k)=>({name:mName(k),short:mShort(k)})});
+function modelSpec(k){const {m,a}=mParts(k);return {runtime:Math.max(20,num(m+'Run')),recharge:Math.max(1,num(m+'R'+a))}}
+function renderFleet(){while(models.length<N)models.push('mk2-10');models=models.map(normModel);
+  $('fleet').innerHTML=Array.from({length:N},(_,i)=>{const {m,a}=mParts(models[i]);return '<div class="fr"><span><i class="dot" style="background:'+COLORS[i]+'"></i>R'+(i+1)+'</span>'+
+    '<select data-r="'+i+'" data-f="m" aria-label="Modèle du robot '+(i+1)+'"><option value="mk2"'+(m==='mk2'?' selected':'')+'>Robot MK II</option><option value="mk1"'+(m==='mk1'?' selected':'')+'>Robot MK I</option></select>'+
+    '<select data-r="'+i+'" data-f="a" aria-label="Chargeur du robot '+(i+1)+'">'+[10,5,2].map(v=>'<option value="'+v+'"'+(a===v?' selected':'')+'>'+v+' A</option>').join('')+'</select></div>'}).join('')}
+$('fleet').addEventListener('change',e=>{const i=+e.target.dataset.r;if(isNaN(i))return;const pr=mParts(models[i]);if(e.target.dataset.f==='m')pr.m=e.target.value;else pr.a=+e.target.value;models[i]=pr.m+'-'+pr.a;changed(true)});
 function setN(i){N=i;[...rb.children].forEach((c,k)=>c.setAttribute('aria-pressed',k+1===N));$('nOut').textContent=N;renderFleet()}setN(2);
-const KEYS=['cross','oneRuntime','oneRecharge','speed','overlap','runtime','reserve','charger','recharge','turn','travel','start','win'];
-function readSettings(){const s={robots:N,angles:angles.slice(),zopts:zopts.map(o=>Object.assign({},o)),models:models.slice(0,N)};KEYS.forEach(k=>s[k]=(k==='charger'||k==='cross')?$(k).value:num(k));return s}
-function applySettings(s){KEYS.forEach(k=>{if(s[k]!=null)$(k).value=s[k]});if(!['off','90','45'].includes($('cross').value))$('cross').value='off';angles=Array.isArray(s.angles)?s.angles.slice():(s.angle!=null?[s.angle]:[]);zopts=Array.isArray(s.zopts)?s.zopts.map(o=>Object.assign({on:true,passes:1,height:50},o)):[];models=Array.isArray(s.models)?s.models.slice():[];if(s.robots)setN(s.robots)}
+const KEYS=['cross','mk2Run','mk2R10','mk2R5','mk2R2','mk1Run','mk1R10','mk1R5','mk1R2','speed','overlap','reserve','turn','travel','start','win'];
+function readSettings(){const s={robots:N,angles:angles.slice(),zopts:zopts.map(o=>Object.assign({},o)),models:models.slice(0,N)};KEYS.forEach(k=>s[k]=k==='cross'?$(k).value:num(k));return s}
+function applySettings(s){s=Object.assign({},s);if(s.mk2Run==null&&s.runtime!=null){s.mk2Run=s.runtime;if(s.recharge!=null)s['mk2R'+(s.charger||10)]=s.recharge}if(s.mk1Run==null&&s.oneRuntime!=null){s.mk1Run=s.oneRuntime;if(s.oneRecharge!=null)s.mk1R5=s.oneRecharge}
+  if(Array.isArray(s.models))s.models=s.models.map(k=>k==='plus'?'mk2-'+(s.charger||10):normModel(k));
+  KEYS.forEach(k=>{if(s[k]!=null)$(k).value=s[k]});if(!['off','90','45'].includes($('cross').value))$('cross').value='off';angles=Array.isArray(s.angles)?s.angles.slice():(s.angle!=null?[s.angle]:[]);zopts=Array.isArray(s.zopts)?s.zopts.map(o=>Object.assign({on:true,passes:1,height:50},o)):[];models=Array.isArray(s.models)?s.models.slice():[];if(s.robots)setN(s.robots)}
 KEYS.forEach(k=>$(k).addEventListener(k==='cross'?'change':'input',()=>changed(true)));
-$('charger').addEventListener('change',()=>{$('recharge').value=$('charger').value==='10'?100:190;changed()});
-// un sens de tonte par zone (comme dans l'appli Lymow) ; une nouvelle zone reçoit son sens optimal
+// un sens de tonte par zone ; une nouvelle zone reçoit son sens optimal
 function syncAngles(g){if(!g.outer){angles=[];zopts=[];return}g.zones.forEach((z,k)=>{if(angles[k]==null)angles[k]=bestAngle(z.rings);if(!zopts[k])zopts[k]={on:true,passes:1,height:50}});angles.length=g.zones.length;zopts.length=g.zones.length}
 function renderAngles(g){const box=$('angles');if(!g.outer){box.innerHTML='<p class="hint">Les réglages par zone apparaissent une fois le terrain tracé.</p>';box.dataset.key='';return}
   const key=g.zones.map((z,k)=>Math.round(z.area)+'|'+z.parent).join(',')+'#'+angles.join(',')+'#'+JSON.stringify(zopts);if(box.dataset.key===key)return;box.dataset.key=key;
@@ -481,6 +490,9 @@ function geo(){if(!cur.outer)return {outer:null,area:0,rings:[],zones:[],outers:
   O.toLL=q=>[lat0-q[1]/110574,lon0+q[0]/(111320*c)];O.toM=ll=>m([ll])[0];
   const G0={outer:outers[0],outers,zones,routes,rings:zones.flatMap(z=>z.rings),area};
   G0.base=cur.base?snapBase(m([cur.base])[0],G0):null;return G0}
+function zoneLabelPt(z){const ok=p=>inRing(p,z.outer)&&!z.holes.some(h=>inRing(p,h));const m=z.outer.reduce((s,p)=>[s[0]+p[0],s[1]+p[1]],[0,0]).map(v=>v/z.outer.length);if(ok(m))return m;
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;z.outer.forEach(p=>{x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1]);x1=Math.max(x1,p[0]);y1=Math.max(y1,p[1])});
+  let best=null,bd=Infinity;for(let i=1;i<12;i++)for(let j=1;j<12;j++){const p=[x0+(x1-x0)*i/12,y0+(y1-y0)*j/12];if(ok(p)){const d=Math.hypot(p[0]-m[0],p[1]-m[1]);if(d<bd){bd=d;best=p}}}return best}
 function inRing(p,r){let ins=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const a=r[i],b=r[j];if((a[1]>p[1])!==(b[1]>p[1])&&p[0]<(b[0]-a[0])*(p[1]-a[1])/(b[1]-a[1])+a[0])ins=!ins}return ins}
 function segDist(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy;let t=L?((p[0]-a[0])*dx+(p[1]-a[1])*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(a[0]+t*dx-p[0],a[1]+t*dy-p[1])}
 function nearRing(p,r,tol){for(let i=0;i<r.length;i++)if(segDist(p,r[i],r[(i+1)%r.length])<tol)return true;return false}
@@ -556,7 +568,7 @@ function passSeq(G,nav,ew,off,start,idOff){let total=0,liOff=0;const cells=[];
 // partage pondéré par la capacité de chaque robot (un One avec moins d'autonomie reçoit une part plus petite)
 function capacity(m){const sp=modelSpec(m),res=Math.min(60,Math.max(0,num('reserve'))),u=sp.runtime*(1-res/100);return u/(u+sp.recharge)}
 function splitSeq(seq,n,v,turn,mods){const cost=s=>s.len/v+turn,totT=seq.reduce((a,s)=>a+cost(s),0);
-  n=Math.max(1,Math.min(n,seq.length));const w=Array.from({length:n},(_,i)=>capacity((mods||[])[i]||'plus')),W=w.reduce((a,b)=>a+b,0);
+  n=Math.max(1,Math.min(n,seq.length));const w=Array.from({length:n},(_,i)=>capacity((mods||[])[i]||'mk2-10')),W=w.reduce((a,b)=>a+b,0);
   const bounds=[];let acc=0;for(let i=0;i<n-1;i++){acc+=w[i];bounds.push(totT*acc/W)}
   const chunks=[];let cum=0,startI=0;
   seq.forEach((s,i)=>{cum+=cost(s);if(chunks.length<n-1&&cum>=bounds[chunks.length]&&i+1<seq.length){chunks.push(seq.slice(startI,i+1));startI=i+1}});
@@ -576,7 +588,7 @@ function buildPlan(G,base){
   const nav=makeNav(G),crossV=$('cross').value,cross=crossV!=='off';
   const start0=base||null;
   const p1=passSeq(G,nav,ew,0,start0,0);let zones;
-  const mods=Array.from({length:N},(_,i)=>models[i]||'plus');
+  const mods=Array.from({length:N},(_,i)=>normModel(models[i]));
   if(!cross){zones=splitSeq(p1.seq,N,v,turn,mods).map(ch=>Object.assign(mkZone(ch,nav,v,turn,ew),{pass:0}))}
   else{
     // le passage croisé démarre à l'autre bout du terrain (point du contour le plus éloigné du départ du 1er passage)
@@ -586,7 +598,7 @@ function buildPlan(G,base){
     else{const n1=Math.ceil(N/2),n2=N-n1;
       zones=splitSeq(p1.seq,n1,v,turn,mods.slice(0,n1)).map(ch=>Object.assign(mkZone(ch,nav,v,turn,ew),{pass:0}))
         .concat(splitSeq(p2.seq,n2,v,turn,mods.slice(n1)).map(ch=>Object.assign(mkZone(ch,nav,v,turn,ew),{pass:1})))}}
-  zones.forEach((z,i)=>z.model=mods[i]||'plus');
+  zones.forEach((z,i)=>z.model=mods[i]||'mk2-10');
   const z0=zones.find(z=>z.segs.length);const B=base||(z0?z0.segs[0].a:G.rings[0][0]);zones.forEach(z=>z.dock=B);
   return {zones,ew,total:p1.total,nav,base:B,v,cross}}
 function schedule(plan){
@@ -630,10 +642,11 @@ function syncBaseMarker(){if(!plan||!O){if(baseMk){map.removeLayer(baseMk);baseM
 
 // ---------- simulation ----------
 let plan=null,sim=null,G=null,tNow=0,playing=false,lastTs=0,ct=null;
-function changed(reset){renderTerrain();clearTimeout(ct);ct=setTimeout(()=>recompute(reset),60)}
+function restyleZones(){[outerLayer,...extraLayers].forEach((l,k)=>{if(l)l.setStyle({color:ZCOL[k%ZCOL.length],weight:2.5,dashArray:(zopts[k]&&zopts[k].on===false)?'6 6':null})})}
+function changed(reset){renderTerrain();restyleZones();clearTimeout(ct);ct=setTimeout(()=>recompute(reset),60)}
 function recompute(reset){G=geo();
   if(!G.outer||G.area<5){plan=sim=null;syncBaseMarker();if(!G.outer){angles=[];$('angles').dataset.key='';renderAngles(G)}$('results').hidden=true;$('gantt').innerHTML='<p class="hint">Choisis ou dessine un terrain pour lancer la simulation.</p>';$('clock').textContent='--:--';draw();return}
-  syncAngles(G);renderAngles(G);$('crossHint').hidden=$('cross').value==='off';plan=buildPlan(G,G.base);sim=schedule(plan);syncBaseMarker();if(reset)tNow=0;tNow=Math.min(tNow,sim.makespan);$('t').value=Math.round(tNow/sim.makespan*1000);
+  syncAngles(G);renderAngles(G);G.zones.forEach(zn=>{zn.lab=zoneLabelPt(zn)});$('crossHint').hidden=$('cross').value==='off';plan=buildPlan(G,G.base);sim=schedule(plan);syncBaseMarker();if(reset)tNow=0;tNow=Math.min(tNow,sim.makespan);$('t').value=Math.round(tNow/sim.makespan*1000);
   $('results').hidden=false;renderStatic();renderDynamic()}
 function k_o(){const o=map.latLngToContainerPoint([O.lat0,O.lon0]);const c=Math.cos(O.lat0*Math.PI/180);const e=map.latLngToContainerPoint([O.lat0,O.lon0+100/(111320*c)]);return {o,k:(e.x-o.x)/100}}
 function draw(){const d=window.devicePixelRatio||1;ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,ov.width,ov.height);if(!plan||!sim||!O)return;
@@ -642,8 +655,9 @@ function draw(){const d=window.devicePixelRatio||1;ctx.setTransform(1,0,0,1,0,0)
   const ring=r=>{r.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath()};
   ctx.save();ctx.beginPath();G.rings.forEach(ring);ctx.clip('evenodd');ctx.lineCap='butt';
   const ew=plan.ew,band=Math.max(1,Math.ceil(8/(ew*k))),thin=Math.max(1,Math.ceil(10/(ew*k)));const m1=css('--mow1'),m2=css('--mow2'),c1='#6fae3c',c2='#c3e58f';
+  G.zones.forEach((zn,kz)=>{const off=zopts[kz]&&zopts[kz].on===false;ctx.beginPath();ring(zn.outer);zn.holes.forEach(ring);ctx.fillStyle=off?'#6b7280':ZCOL[kz%ZCOL.length];ctx.globalAlpha=off?.18:.34;ctx.fill('evenodd')});ctx.globalAlpha=1;
   plan.zones.forEach((z,i)=>{const st=stateAt(sim.robots[i],tNow),tz=st.doneMin*60;
-    ctx.strokeStyle=COLORS[i];ctx.globalAlpha=.22;ctx.lineWidth=ew*1.05;ctx.beginPath();z.segs.forEach(s=>{if(s.t1>tz){ctx.moveTo(s.a[0],s.a[1]);ctx.lineTo(s.b[0],s.b[1])}});ctx.stroke();
+    ctx.lineWidth=ew*1.05;
     ctx.globalAlpha=.78;for(const par of [0,1]){ctx.beginPath();
       for(const s of z.segs){if(s.t0>=tz)break;if(Math.floor(s.lane/band)%2!==par)continue;const f=Math.min(1,(tz-s.t0)/Math.max(1e-9,s.t1-s.t0));
         ctx.moveTo(s.a[0],s.a[1]);ctx.lineTo(s.a[0]+(s.b[0]-s.a[0])*f,s.a[1]+(s.b[1]-s.a[1])*f)}ctx.strokeStyle=par?m2:m1;ctx.stroke()}
@@ -651,13 +665,16 @@ function draw(){const d=window.devicePixelRatio||1;ctx.setTransform(1,0,0,1,0,0)
     ctx.globalAlpha=.85;ctx.strokeStyle=COLORS[i];ctx.lineWidth=1/k;ctx.beginPath();
     for(const s of z.segs){if(s.t1<=tz||s.lane%thin)continue;ctx.moveTo(s.a[0],s.a[1]);ctx.lineTo(s.b[0],s.b[1])}ctx.stroke()});
   ctx.restore();ctx.globalAlpha=1;
+  ctx.setTransform(d,0,0,d,0,0);G.zones.forEach((zn,kz)=>{if(!zn.lab)return;const q=toS(zn.lab),off=zopts[kz]&&zopts[kz].on===false;
+    ctx.beginPath();ctx.arc(q[0],q[1],12,0,7);ctx.fillStyle='#1b2418';ctx.globalAlpha=.85;ctx.fill();ctx.globalAlpha=1;ctx.lineWidth=3;ctx.strokeStyle=off?'#9ca3af':ZCOL[kz%ZCOL.length];ctx.stroke();
+    ctx.font='700 12px "JetBrains Mono", monospace';ctx.fillStyle='#fff';const tx='Z'+(kz+1);ctx.fillText(tx,q[0]-ctx.measureText(tx).width/2,q[1]+4)});
   ctx.setTransform(d,0,0,d,0,0);
   // base de charge commune : une borne par robot, côte à côte
   const nb=plan.zones.length,Bs=toS(plan.base),gap=20,slots=plan.zones.map((z,i)=>[Bs[0]+(i-(nb-1)/2)*gap,Bs[1]]);
   ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(Bs[0]-nb*gap/2-4,Bs[1]-11,nb*gap+8,22);
   slots.forEach((q,i)=>{ctx.fillStyle='#fff';ctx.strokeStyle=COLORS[i];ctx.lineWidth=2.5;ctx.fillRect(q[0]-7,q[1]-7,14,14);ctx.strokeRect(q[0]-7,q[1]-7,14,14)});
   plan.zones.forEach((z,i)=>{const st=stateAt(sim.robots[i],tNow);
-    const L=toS(z.label);if(z.pass===1)L[1]+=24;ctx.font='600 12px "JetBrains Mono", monospace';const lab='R'+(i+1)+' '+MODELS[z.model||'plus'].short+(plan.cross?(z.pass===-1?' · 2 passages':' · passage '+(z.pass+1)):'')+' · '+fmt(z.area)+' m²';const tw=ctx.measureText(lab).width;
+    const L=toS(z.label);if(z.pass===1)L[1]+=24;ctx.font='600 12px "JetBrains Mono", monospace';const lab='R'+(i+1)+' '+MODELS[z.model||'mk2-10'].short+(plan.cross?(z.pass===-1?' · 2 passages':' · passage '+(z.pass+1)):'')+' · '+fmt(z.area)+' m²';const tw=ctx.measureText(lab).width;
     ctx.fillStyle='rgba(0,0,0,.65)';ctx.fillRect(L[0]-tw/2-6,L[1]-11,tw+12,21);ctx.fillStyle='#fff';ctx.fillText(lab,L[0]-tw/2,L[1]+4);
     const D=slots[i];
     let p;if(st.type==='mow')p=toS(posAt(z,st.doneMin*60));else if(st.type==='travel'){const Rs=st.seg.route.map(toS);Rs[0]=D;p=alongP(Rs,st.dir==='out'?st.p:1-st.p)}else p=D;
@@ -669,7 +686,7 @@ const kpi=(v,l,s)=>'<div class="kpi"><span>'+l+'</span><b>'+v+'</b><small>'+s+'<
 function renderStatic(){const s=sim,area=plan.total*plan.ew,rate=area/(s.makespan/60),days=Math.ceil(s.makespan/60/s.win),ch=s.robots.reduce((a,r)=>a+r.charges,0);
   $('kpis').innerHTML=kpi(hm(s.makespan),'Durée','fin à '+clock(s.makespan))+kpi(fmt(rate),'m²/h flotte',plan.cross?'terrain tondu 2 fois (croisé)':fmt(rate/plan.zones.length)+' m²/h par robot')+
     kpi(Math.max(...s.robots.map(r=>r.cycles)),'Cycles batterie',ch+' recharge'+(ch>1?'s':'')+' au total')+kpi(days,days>1?'Jours':'Jour','plage de '+s.win+' h / jour');
-  const T=s.makespan;let g='';s.robots.forEach((r,i)=>{g+='<div class="grow"><div class="lab"><i class="dot" style="background:'+COLORS[i]+'"></i>R'+(i+1)+'<small> '+MODELS[r.model||'plus'].short+'</small></div><div class="track">';
+  const T=s.makespan;let g='';s.robots.forEach((r,i)=>{g+='<div class="grow"><div class="lab"><i class="dot" style="background:'+COLORS[i]+'"></i>R'+(i+1)+'<small> '+MODELS[r.model||'mk2-10'].short+'</small></div><div class="track">';
     r.segs.forEach(x=>{const w=(x.e-x.s)/T*100;if(w>0)g+='<div class="seg '+x.type+'" style="left:'+(x.s/T*100)+'%;width:'+w+'%'+(x.type==='mow'?';background:'+COLORS[i]:'')+'" title="'+lbl(x.type)+' '+clock(x.s)+' → '+clock(x.e)+'"></div>'});
     g+='<div class="cursor" data-c></div></div></div>'});
   const step=T>900?180:T>600?120:T>300?60:T>120?30:15;let ax='<div class="axis">';for(let m=0;m<=T+.1;m+=step)ax+='<span style="left:'+(m/T*100)+'%">'+clock(m).replace(/ \(.*\)/,'')+'</span>';
@@ -678,7 +695,7 @@ function renderDynamic(){if(!sim)return;$('clock').textContent=clock(tNow);docum
   let h='<tr><th>Robot</th><th>Surface</th><th>Tonte</th><th>Trajet</th><th>Fin</th><th>État</th><th>Batt.</th></tr>';
   sim.robots.forEach((r,i)=>{const z=plan.zones[i],st=stateAt(r,tNow);
     const pill={mow:'<span class="pill mow">Tonte</span>',charge:'<span class="pill charge">Charge</span>',travel:'<span class="pill travel">'+(st.dir==='out'?'Départ':'Retour')+'</span>',done:'<span class="pill done">Fini</span>'}[st.type];
-    h+='<tr><td><i class="dot" style="background:'+COLORS[i]+'"></i>R'+(i+1)+' <small>'+MODELS[r.model||'plus'].short+'</small></td><td>'+fmt(z.area)+' m²</td><td>'+hm(r.mowT)+'</td><td>'+fmt(r.maxLeg,1)+' min</td><td>'+clock(r.end).replace(' (','<br>(')+'</td><td>'+pill+'</td><td>'+fmt(Math.max(0,Math.min(100,st.b)))+' %</td></tr>'});
+    h+='<tr><td><i class="dot" style="background:'+COLORS[i]+'"></i>R'+(i+1)+' <small>'+MODELS[r.model||'mk2-10'].short+'</small></td><td>'+fmt(z.area)+' m²</td><td>'+hm(r.mowT)+'</td><td>'+fmt(r.maxLeg,1)+' min</td><td>'+clock(r.end).replace(' (','<br>(')+'</td><td>'+pill+'</td><td>'+fmt(Math.max(0,Math.min(100,st.b)))+' %</td></tr>'});
   $('tbl').innerHTML=h;draw()}
 $('t').addEventListener('input',()=>{if(!sim)return;tNow=$('t').value/1000*sim.makespan;renderDynamic()});
 $('play').onclick=()=>{if(!sim)return;if(!playing&&tNow>=sim.makespan-1e-6)tNow=0;playing=!playing;$('play').textContent=playing?'Pause':'Lancer';lastTs=0;if(playing)requestAnimationFrame(loop)};
@@ -705,7 +722,6 @@ $('repGo').onclick=()=>{const ids=[...$('reportList').querySelectorAll('input:ch
   w.document.open();w.document.write('<p style="font:16px sans-serif;padding:24px">Calcul du rapport…</p>');
   setTimeout(()=>{const html=buildReport(list,$('repTitle').value.trim());w.document.open();w.document.write(html);w.document.close()},30)};
 
-const ZCOL=['#7fd04b','#3ec7e0','#f7b538','#e879f9','#a3e635','#60a5fa','#fb923c','#f472b6'];
 function wproj(lat,lng,z){const S=256*Math.pow(2,z),sn=Math.sin(lat*Math.PI/180);return [(lng+180)/360*S,(0.5-Math.log((1+sn)/(1-sn))/(4*Math.PI))*S]}
 function planSVG(t,res,maxW,maxH){
   const polys=[t.outer,...(t.extra||[])],all=[...polys.flat(),...(t.routes||[]).flat()];
@@ -734,8 +750,8 @@ function planSVG(t,res,maxW,maxH){
   svg+='<g transform="translate('+(W-26)+',30)"><circle r="17" fill="rgba(0,0,0,.6)"/><path d="M0,-12 L6,6 L0,2 L-6,6 Z" fill="#fff"/><text y="-17" text-anchor="middle" font-size="10" font-weight="700" fill="#fff" dy="-2">N</text></g>';
   const sc=Math.min(maxW/W,560/H,2.4);
   return '<div class="planw" style="width:'+Math.round(W*sc)+'px;height:'+Math.round(H*sc)+'px"><div class="plan" style="width:'+W+'px;height:'+H+'px;transform:scale('+sc.toFixed(3)+')">'+tiles+'<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+svg+'</svg></div></div>'}
-function fleetTxt(r){const st=r.settings,ms=r.s.robots.map(x=>x.model||'plus'),np=ms.filter(m=>m==='plus').length,no=ms.length-np;const parts=[];
-  if(np)parts.push(np+' Lymow One Plus (autonomie '+st.runtime+' min, recharge '+st.recharge+' min)');if(no)parts.push(no+' Lymow One (autonomie '+st.oneRuntime+' min, recharge '+st.oneRecharge+' min)');return parts.join(' + ')}
+function fleetTxt(r){const st=r.settings,cnt={};r.s.robots.forEach(x=>{const k=normModel(x.model);cnt[k]=(cnt[k]||0)+1});
+  return Object.keys(cnt).map(k=>{const {m,a}=mParts(k);return cnt[k]+' × '+mName(k)+' (autonomie '+st[m+'Run']+' min, recharge '+st[m+'R'+a]+' min)'}).join(' + ')}
 function O2LL(res,q){const o=res.O;return [o.lat0-q[1]/110574,o.lon0+q[0]/(111320*Math.cos(o.lat0*Math.PI/180))]}
 function buildReport(list,title){
   const rows=list.map(t=>{const r=simulateTerrain(t);if(r){r.O={lat0:0,lon0:0};const pts=[t.outer,...(t.extra||[])].flat();r.O.lat0=pts.reduce((s,p)=>s+p[0],0)/pts.length;r.O.lon0=pts.reduce((s,p)=>s+p[1],0)/pts.length}return {t,r}});
@@ -750,7 +766,7 @@ function buildReport(list,title){
     const rl=g.routes.reduce((a,rt)=>{let s=0;for(let i=1;i<rt.length;i++)s+=Math.hypot(rt[i][0]-rt[i-1][0],rt[i][1]-rt[i-1][1]);return a+s},0);
     const area=r.p.total*r.p.ew,rate=area/(r.s.makespan/60);
     const zl=g.zones.map((z,i)=>'<tr><td><span class="sw" style="background:'+ZCOL[i%ZCOL.length]+'"></span>Zone '+(i+1)+(z.parent>=0?' <small>(dans la zone '+(z.parent+1)+')</small>':'')+'</td><td class="n">'+fmt(z.area)+' m²</td><td class="n">'+((r.zopts[i]||{}).on===false?'<span class="offz">non tondue</span>':((r.zopts[i]||{}).passes||1)+' × · '+(r.angles[i]??'–')+'°')+'</td><td class="n">'+((r.zopts[i]||{}).height||50)+' mm</td><td class="n">'+(z.excl.length||'–')+'</td></tr>').join('');
-    const rob=r.s.robots.map((x,i)=>'<tr><td>R'+(i+1)+' <small>'+MODELS[x.model||'plus'].name+'</small></td><td class="n">'+fmt(r.p.zones[i].area)+' m²</td><td class="n">'+hm(x.mowT)+'</td><td class="n">'+x.cycles+'</td><td class="n">'+hm(x.end)+'</td></tr>').join('');
+    const rob=r.s.robots.map((x,i)=>'<tr><td>R'+(i+1)+' <small>'+MODELS[x.model||'mk2-10'].name+'</small></td><td class="n">'+fmt(r.p.zones[i].area)+' m²</td><td class="n">'+hm(x.mowT)+'</td><td class="n">'+x.cycles+'</td><td class="n">'+hm(x.end)+'</td></tr>').join('');
     return '<section class="card"><div class="ch"><span class="num">'+(k+1)+'</span><div><h2>'+h(t.name)+'</h2><p class="sub">'+h([t.client,t.address].filter(Boolean).join(' · '))+'</p></div><div class="big"><b>'+fmt(g.area)+' m²</b><span>'+fmt(g.area/10000,2)+' ha à tondre</span></div></div>'+
       planSVG(t,r,764,560)+
       '<div class="cols"><div><h3>Zones de tonte</h3><table><tr><th>Zone</th><th class="n">Surface</th><th class="n">Passages · sens</th><th class="n">Coupe</th><th class="n">Excl.</th></tr>'+zl+'</table>'+
@@ -781,7 +797,7 @@ function buildReport(list,title){
   '<div class="tot"><div><span>Terrains</span><b>'+rows.length+'</b></div><div><span>Surface à tondre</span><b>'+fmt(tot)+' m²</b></div><div><span>Soit</span><b>'+fmt(tot/10000,2)+' ha</b></div></div>'+
   '<section class="card"><h3>Récapitulatif</h3><table><tr><th>Terrain</th><th>Zones</th><th class="n">Surface</th><th class="n">Robots</th><th class="n">Durée d’une tonte</th><th class="n">Cycles batterie</th></tr>'+sum+'<tr><td><b>Total</b></td><td></td><td class="n"><b>'+fmt(tot)+' m²</b></td><td></td><td></td><td></td></tr></table>'+
   '<div class="legend" style="margin-top:10px"><span><i style="background:#7fd04b"></i>Zones de tonte (numérotées)</span><span><i style="background:repeating-linear-gradient(45deg,#ef4444 0 3px,rgba(239,68,68,.3) 3px 7px)"></i>Zones d’exclusion</span><span><i style="background:repeating-linear-gradient(90deg,#facc15 0 8px,transparent 8px 12px)"></i>Routes de passage</span></div></section>'+
-  cards+'<footer>Simulation Novogarden, robots Lymow (coupe 40,6 cm). Zones grisées : non tondues. Durées indicatives : pente, hauteur d’herbe et météo les font varier. Fond de plan : orthophotos © IGN – Géoplateforme, Licence Ouverte Etalab 2.0.</footer></div></body></html>'}
+  cards+'<footer>Simulation Novogarden, robots MK I / MK II (coupe 40,6 cm). Zones grisées : non tondues. Durées indicatives : pente, hauteur d’herbe et météo les font varier. Fond de plan : orthophotos © IGN – Géoplateforme, Licence Ouverte Etalab 2.0.</footer></div></body></html>'}
 
 renderList();renderTerrain();recompute(true);
 if(terrains.length)openTerrain(terrains[0]);
