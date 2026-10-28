@@ -125,10 +125,25 @@ th:first-child,td:first-child{text-align:left}
 .zc .zt{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
 .zc .zt small{font-weight:400;color:var(--muted)}
 .zc .zt .za{margin-left:auto;font:400 12px var(--f-mono);color:var(--muted)}
+.zc .zi{display:inline-grid;place-items:center;min-width:28px;height:28px;padding:0 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--muted);cursor:pointer}
+.zc .zi:hover{color:var(--ink);border-color:var(--muted)}
+.zc .zi.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.zc .zi.del:hover,.zc .zi.del.arm{color:#fff;background:var(--danger);border-color:var(--danger)}
+.zc .zi.del.arm span{font:600 11px var(--f-body)}
+.zc.editing{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent)}
 .zc .zr{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .zc .zr label,.zc .zs label{font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between}
 .zc select,.zc input[type=number]{padding:5px 8px;font-size:13px}
 .zc .dot{width:10px;height:10px;border-radius:2px;flex:none}
+.cost{display:flex;flex-direction:column;gap:6px;font-size:13px}
+.cost table td,.cost table th{padding:5px 4px}
+.cost .tot{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.cost .tot div{background:var(--surface);padding:8px 10px}.cost .tot b{display:block;font:600 18px var(--f-display);font-variant-numeric:tabular-nums}.cost .tot span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.cost .note{font-size:11.5px;color:var(--muted);margin:0}
+.zrob{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.zrob span.l{font-size:11.5px;color:var(--muted);margin-right:2px}
+.zrob button{font:600 11px var(--f-mono);padding:3px 7px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.zrob button[aria-pressed="true"]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 18%,var(--surface))}
 .report-box{display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .report-list{display:flex;flex-direction:column;gap:4px;max-height:220px;overflow:auto}
 .report-list label{display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer}
@@ -247,6 +262,9 @@ th:first-child,td:first-child{text-align:left}
       <h2>Résultat</h2>
       <div class="kpis" id="kpis"></div>
       <table id="tbl"></table>
+      <h2 style="margin-top:6px">Estimation tarifaire</h2>
+      <div class="field"><label for="tpy">Tontes par an <span class="u">pour le total annuel</span></label><input type="number" id="tpy" min="1" max="120" step="1" value="30"></div>
+      <div id="cost" class="cost"></div>
     </div>
 
     <div class="foot">
@@ -327,14 +345,14 @@ function addHole(ll){const lay=L.polygon(ll,holeStyle).addTo(map);holeLayers.pus
   lay.on('click',e=>{if(!editing)return;L.DomEvent.stop(e);map.removeLayer(lay);holeLayers=holeLayers.filter(h=>h!==lay);cur.holes=holeLayers.map(llOf);changed()})}
 function addExtra(ll){const lay=L.polygon(ll,shapeStyle).addTo(map);extraLayers.push(lay);cur.extra=extraLayers.map(llOf);
   lay.on('pm:edit pm:markerdragend pm:vertexremoved',()=>{cur.extra=extraLayers.map(llOf);changed()});
-  lay.on('click',e=>{if(!editing)return;L.DomEvent.stop(e);const k=extraLayers.indexOf(lay);map.removeLayer(lay);extraLayers.splice(k,1);angles.splice(k+1,1);cur.extra=extraLayers.map(llOf);changed()})}
+  lay.on('click',e=>{if(!editing)return;L.DomEvent.stop(e);const k=extraLayers.indexOf(lay);map.removeLayer(lay);extraLayers.splice(k,1);angles.splice(k+1,1);zopts.splice(k+1,1);cur.extra=extraLayers.map(llOf);changed()})}
 const routeStyle={color:'#facc15',weight:5,opacity:.95,dashArray:'10 7',lineCap:'round'};
 function addRoute(ll){if(!ll||ll.length<2)return;const lay=L.polyline(ll,routeStyle).addTo(map);routeLayers.push(lay);cur.routes=routeLayers.map(llOf);
   lay.bindTooltip('Route de passage (le robot circule sans tondre)',{sticky:true});
   lay.on('pm:edit pm:markerdragend pm:vertexremoved',()=>{cur.routes=routeLayers.map(llOf);changed()});
   lay.on('click',e=>{if(!editing)return;L.DomEvent.stop(e);map.removeLayer(lay);routeLayers=routeLayers.filter(h=>h!==lay);cur.routes=routeLayers.map(llOf);changed()})}
 function allBounds(){return L.featureGroup([outerLayer,...extraLayers,...routeLayers].filter(Boolean)).getBounds()}
-function clearShapes(){setOuter(null);extraLayers.forEach(h=>map.removeLayer(h));extraLayers=[];cur.extra=[];holeLayers.forEach(h=>map.removeLayer(h));holeLayers=[];cur.holes=[];routeLayers.forEach(h=>map.removeLayer(h));routeLayers=[];cur.routes=[];angles=[];setEditing(false)}
+function clearShapes(){zEdit=-1;zDelArm=-1;setOuter(null);extraLayers.forEach(h=>map.removeLayer(h));extraLayers=[];cur.extra=[];holeLayers.forEach(h=>map.removeLayer(h));holeLayers=[];cur.holes=[];routeLayers.forEach(h=>map.removeLayer(h));routeLayers=[];cur.routes=[];angles=[];setEditing(false)}
 
 map.on('pm:create',e=>{const ll=llOf(e.layer);map.removeLayer(e.layer);
   if(drawKind==='hole')addHole(ll);else if(drawKind==='route')addRoute(ll);else if(drawKind==='extra'&&cur.outer)addExtra(ll);else setOuter(ll);drawKind=null;mode('');changed()});
@@ -449,25 +467,60 @@ function renderFleet(){while(models.length<N)models.push('mk2-10');models=models
     '<select data-r="'+i+'" data-f="a" aria-label="Chargeur du robot '+(i+1)+'">'+[10,5,2].map(v=>'<option value="'+v+'"'+(a===v?' selected':'')+'>'+v+' A</option>').join('')+'</select></div>'}).join('')}
 $('fleet').addEventListener('change',e=>{const i=+e.target.dataset.r;if(isNaN(i))return;const pr=mParts(models[i]);if(e.target.dataset.f==='m')pr.m=e.target.value;else pr.a=+e.target.value;models[i]=pr.m+'-'+pr.a;changed(true)});
 function setN(i){N=i;[...rb.children].forEach((c,k)=>c.setAttribute('aria-pressed',k+1===N));$('nOut').textContent=N;renderFleet()}setN(2);
-const KEYS=['cross','mk2Run','mk2R10','mk2R5','mk2R2','mk1Run','mk1R10','mk1R5','mk1R2','speed','overlap','reserve','turn','travel','start','win'];
+const KEYS=['cross','tpy','mk2Run','mk2R10','mk2R5','mk2R2','mk1Run','mk1R10','mk1R5','mk1R2','speed','overlap','reserve','turn','travel','start','win'];
 function readSettings(){const s={robots:N,angles:angles.slice(),zopts:zopts.map(o=>Object.assign({},o)),models:models.slice(0,N)};KEYS.forEach(k=>s[k]=k==='cross'?$(k).value:num(k));return s}
 function applySettings(s){s=Object.assign({},s);if(s.mk2Run==null&&s.runtime!=null){s.mk2Run=s.runtime;if(s.recharge!=null)s['mk2R'+(s.charger||10)]=s.recharge}if(s.mk1Run==null&&s.oneRuntime!=null){s.mk1Run=s.oneRuntime;if(s.oneRecharge!=null)s.mk1R5=s.oneRecharge}
   if(Array.isArray(s.models))s.models=s.models.map(k=>k==='plus'?'mk2-'+(s.charger||10):normModel(k));
-  KEYS.forEach(k=>{if(s[k]!=null)$(k).value=s[k]});if(!['off','90','45'].includes($('cross').value))$('cross').value='off';angles=Array.isArray(s.angles)?s.angles.slice():(s.angle!=null?[s.angle]:[]);zopts=Array.isArray(s.zopts)?s.zopts.map(o=>Object.assign({on:true,passes:1,height:50},o)):[];models=Array.isArray(s.models)?s.models.slice():[];if(s.robots)setN(s.robots)}
+  KEYS.forEach(k=>{if(s[k]!=null)$(k).value=s[k]});if(!['off','90','45'].includes($('cross').value))$('cross').value='off';angles=Array.isArray(s.angles)?s.angles.slice():(s.angle!=null?[s.angle]:[]);zopts=Array.isArray(s.zopts)?s.zopts.map(o=>Object.assign({on:true,passes:1,height:50,robots:null},o)):[];models=Array.isArray(s.models)?s.models.slice():[];if(s.robots)setN(s.robots)}
 KEYS.forEach(k=>$(k).addEventListener(k==='cross'?'change':'input',()=>changed(true)));
 // un sens de tonte par zone ; une nouvelle zone reçoit son sens optimal
-function syncAngles(g){if(!g.outer){angles=[];zopts=[];return}g.zones.forEach((z,k)=>{if(angles[k]==null)angles[k]=bestAngle(z.rings);if(!zopts[k])zopts[k]={on:true,passes:1,height:50}});angles.length=g.zones.length;zopts.length=g.zones.length}
+// grille tarifaire Novogarden (TTC, flyer V9) : prix d'une tonte selon la surface ; au-delà de 7 000 m², prolongée au prix au m² de la dernière tranche
+const GRID={tr:[500,1500,3000,7000],solo:[29.9,39,49,67],ess:[130,175,220,265],ser:[232,312,392,472]};
+function tontePrice(area,pack){if(area<=0)return 0;const i=GRID.tr.findIndex(t=>area<=t);const base=pack==='ess'?GRID.ess.map(v=>v/5):pack==='ser'?GRID.ser.map(v=>v/10):GRID.solo;
+  return i>=0?base[i]:base[3]*area/7000}
+function estimateCost(g,zo,tpy){const lines=[];let extrap=false;
+  g.zones.forEach((z,k)=>{const o=zo[k]||{on:true,passes:1};if(!o.on||z.area<1)return;const n=Math.max(1,o.passes|0);if(z.area>7000)extrap=true;
+    lines.push({k,area:z.area,passes:n,solo:tontePrice(z.area,'solo')*n,ess:tontePrice(z.area,'ess')*n,ser:tontePrice(z.area,'ser')*n})});
+  const sumk=f=>lines.reduce((a,l)=>a+l[f],0);const c={lines,extrap,solo:sumk('solo'),ess:sumk('ess'),ser:sumk('ser'),tpy:Math.max(1,tpy|0)};c.year=c.ser*c.tpy;return c}
+const eur=v=>v.toLocaleString('fr-FR',{style:'currency',currency:'EUR',minimumFractionDigits:v<1000?2:0,maximumFractionDigits:v<1000?2:0});
+function costHTML(c,compact){if(!c.lines.length)return '<p class="note">Aucune zone active.</p>';
+  return '<table><tr><th>Zone</th><th class="n">Surface</th><th class="n">Solo</th><th class="n">Essentiel</th><th class="n">Sérénité</th></tr>'+
+    c.lines.map(l=>'<tr><td>Z'+(l.k+1)+(l.passes>1?' ×'+l.passes:'')+'</td><td class="n">'+fmt(l.area)+' m²</td><td class="n">'+eur(l.solo)+'</td><td class="n">'+eur(l.ess)+'</td><td class="n">'+eur(l.ser)+'</td></tr>').join('')+
+    '<tr><td><b>Par tonte</b></td><td></td><td class="n"><b>'+eur(c.solo)+'</b></td><td class="n"><b>'+eur(c.ess)+'</b></td><td class="n"><b>'+eur(c.ser)+'</b></td></tr></table>'+
+    '<div class="tot"><div><span>Pack Sérénité, par tonte</span><b>'+eur(c.ser)+'</b></div><div><span>'+c.tpy+' tontes / an</span><b>'+eur(c.year)+'</b></div></div>'+
+    '<p class="note">Prix TTC de ta grille, zone par zone (chaque passage compte comme une tonte). Essentiel = pack 5 ramené à la tonte, Sérénité = pack 10 ramené à la tonte.'+(c.extrap?' Zones de plus de 7 000 m² : la grille dit « sur devis », le prix est prolongé au m² de la tranche 3 000–7 000 m².':'')+'</p>'}
+// crayon : modifier le contour d'une seule zone ; poubelle : supprimer la zone (deuxième clic pour confirmer)
+let zEdit=-1,zDelArm=-1,zDelT=null;
+function zoneLayer(k){return k===0?outerLayer:extraLayers[k-1]}
+function editZone(k){[outerLayer,...extraLayers].forEach(l=>l&&l.pm&&l.pm.disable());if(editing)setEditing(false);
+  if(zEdit===k){zEdit=-1;mode('');}else{const l=zoneLayer(k);if(!l)return;zEdit=k;l.pm.enable({allowSelfIntersection:false,snappable:true});map.fitBounds(l.getBounds(),{padding:[40,40],maxZoom:20});
+    mode('Zone '+(k+1)+' : fais glisser les points, clique un point du milieu pour en ajouter, clic droit sur un point pour le supprimer. Reclique le crayon pour terminer.')}
+  $('angles').dataset.key='';renderAngles(geo())}
+function deleteZone(k){clearTimeout(zDelT);
+  if(zDelArm!==k){zDelArm=k;$('angles').dataset.key='';renderAngles(geo());zDelT=setTimeout(()=>{zDelArm=-1;$('angles').dataset.key='';renderAngles(geo())},4000);return}
+  zDelArm=-1;if(zEdit>=0){const l=zoneLayer(zEdit);l&&l.pm&&l.pm.disable();zEdit=-1}
+  if(k===0&&!extraLayers.length){$('resetBtn').click();return}
+  if(k===0){const nl=extraLayers.shift();const ll=llOf(nl);map.removeLayer(nl);setOuter(ll)}else{const l=extraLayers[k-1];map.removeLayer(l);extraLayers.splice(k-1,1)}
+  cur.extra=extraLayers.map(llOf);angles.splice(k,1);zopts.splice(k,1);mode('Zone '+(k+1)+' supprimée.'+(cur.id?' Clique « Mettre à jour » pour l\u2019enregistrer.':''));$('angles').dataset.key='';changed(true)}
+$('angles').addEventListener('click',e=>{const b=e.target.closest('[data-zact]');if(!b)return;const k=+b.dataset.z;if(b.dataset.zact==='edit')editZone(k);else deleteZone(k)});
+function syncAngles(g){if(!g.outer){angles=[];zopts=[];return}g.zones.forEach((z,k)=>{if(angles[k]==null)angles[k]=bestAngle(z.rings);if(!zopts[k])zopts[k]={on:true,passes:1,height:50,robots:null}});angles.length=g.zones.length;zopts.length=g.zones.length}
 function renderAngles(g){const box=$('angles');if(!g.outer){box.innerHTML='<p class="hint">Les réglages par zone apparaissent une fois le terrain tracé.</p>';box.dataset.key='';return}
-  const key=g.zones.map((z,k)=>Math.round(z.area)+'|'+z.parent).join(',')+'#'+angles.join(',')+'#'+JSON.stringify(zopts);if(box.dataset.key===key)return;box.dataset.key=key;
-  box.innerHTML=g.zones.map((z,k)=>{const o=zopts[k];return '<div class="zc'+(o.on?'':' off')+'"><div class="zt"><input type="checkbox" id="zon'+k+'"'+(o.on?' checked':'')+' aria-label="Tondre la zone '+(k+1)+'"><i class="dot" style="background:'+ZCOL[k%ZCOL.length]+'"></i><label for="zon'+k+'">Zone '+(k+1)+(z.parent>=0?' <small>dans zone '+(z.parent+1)+'</small>':'')+'</label><span class="za">'+fmt(z.area)+' m²</span></div>'+
+  const key=zEdit+'|'+zDelArm+'|'+N+'#'+g.zones.map((z,k)=>Math.round(z.area)+'|'+z.parent).join(',')+'#'+angles.join(',')+'#'+JSON.stringify(zopts);if(box.dataset.key===key)return;box.dataset.key=key;
+  box.innerHTML=g.zones.map((z,k)=>{const o=zopts[k];return '<div class="zc'+(o.on?'':' off')+(zEdit===k?' editing':'')+'"><div class="zt"><input type="checkbox" id="zon'+k+'"'+(o.on?' checked':'')+' aria-label="Tondre la zone '+(k+1)+'"><i class="dot" style="background:'+ZCOL[k%ZCOL.length]+'"></i><label for="zon'+k+'">Zone '+(k+1)+(z.parent>=0?' <small>dans zone '+(z.parent+1)+'</small>':'')+'</label><span class="za">'+fmt(z.area)+' m²</span>'+
+    '<button type="button" class="zi'+(zEdit===k?' on':'')+'" data-zact="edit" data-z="'+k+'" title="Modifier le contour de la zone" aria-label="Modifier la zone '+(k+1)+'"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>'+
+    '<button type="button" class="zi del'+(zDelArm===k?' arm':'')+'" data-zact="del" data-z="'+k+'" title="'+(zDelArm===k?'Cliquer encore pour supprimer':'Supprimer la zone')+'" aria-label="Supprimer la zone '+(k+1)+'">'+(zDelArm===k?'<span>Supprimer ?</span>':'<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>')+'</button></div>'+
     '<div class="zr"><div><label for="zpa'+k+'">Passages</label><select id="zpa'+k+'">'+[1,2,3,4].map(n=>'<option value="'+n+'"'+(o.passes===n?' selected':'')+'>'+n+(n>1?' passages':' passage')+'</option>').join('')+'</select></div>'+
     '<div><label for="zht'+k+'">Hauteur de coupe <span>mm</span></label><input type="number" id="zht'+k+'" min="30" max="100" step="5" value="'+o.height+'"></div></div>'+
+    '<div class="zrob" data-z="'+k+'"><span class="l">Robots :</span><button type="button" data-rb="all" aria-pressed="'+!(Array.isArray(o.robots)&&o.robots.length)+'">Tous</button>'+Array.from({length:N},(_,i)=>'<button type="button" data-rb="'+i+'" aria-pressed="'+(Array.isArray(o.robots)&&o.robots.includes(i))+'"><i class="dot" style="background:'+COLORS[i]+'"></i>R'+(i+1)+'</button>').join('')+'</div>'+
     '<div class="zs"><label for="ang'+k+'">Sens de tonte <output id="angOut'+k+'">'+angles[k]+'°</output></label><input type="range" id="ang'+k+'" min="0" max="179" step="1" value="'+angles[k]+'"></div></div>'}).join('');
-  const rekey=()=>{box.dataset.key=g.zones.map((z,k)=>Math.round(z.area)+'|'+z.parent).join(',')+'#'+angles.join(',')+'#'+JSON.stringify(zopts)};
+  const rekey=()=>{box.dataset.key=zEdit+'|'+zDelArm+'|'+N+'#'+g.zones.map((z,k)=>Math.round(z.area)+'|'+z.parent).join(',')+'#'+angles.join(',')+'#'+JSON.stringify(zopts)};
   g.zones.forEach((z,k)=>{
     $('ang'+k).addEventListener('input',e=>{angles[k]=+e.target.value;$('angOut'+k).textContent=angles[k]+'°';rekey();changed()});
     $('zon'+k).addEventListener('change',e=>{zopts[k].on=e.target.checked;e.target.closest('.zc').classList.toggle('off',!e.target.checked);rekey();changed(true)});
     $('zpa'+k).addEventListener('change',e=>{zopts[k].passes=+e.target.value;rekey();changed(true)});
+    box.querySelector('.zrob[data-z="'+k+'"]').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const o=zopts[k];
+      if(b.dataset.rb==='all')o.robots=null;else{const i=+b.dataset.rb;let a=Array.isArray(o.robots)?o.robots.slice():[];a=a.includes(i)?a.filter(x=>x!==i):a.concat(i);o.robots=a.length&&a.length<N?a.sort():null}
+      box.dataset.key='';renderAngles(g);changed(true)});
     $('zht'+k).addEventListener('change',e=>{zopts[k].height=Math.min(100,Math.max(30,+e.target.value||50));e.target.value=zopts[k].height;rekey();changed()})})}
 $('autoAngle').onclick=()=>{const g=geo();if(!g.outer)return;angles=g.zones.map(z=>bestAngle(z.rings));changed()};
 
@@ -549,9 +602,9 @@ function cellsOf(lanes){const cells=[];let prevL=[];const ov=(p,q)=>Math.min(p.x
     prevL=cur});return cells}
 
 // suite ordonnée de bandes pour un passage complet du terrain, décalé de « off » degrés par rapport au sens de chaque zone
-function passSeq(G,nav,ew,off,start,idOff){let total=0,liOff=0;const cells=[];
+function passSeq(G,nav,ew,off,start,idOff,only){let total=0,liOff=0;const cells=[];
   // zones décochées : pas tondues (le robot peut quand même y circuler) ; plusieurs passages = la zone est repassée autant de fois
-  G.zones.forEach((z,k)=>{const o=zopts[k]||{on:true,passes:1};if(!o.on)return;const a=((angles[k]||0)+off)*Math.PI/180;const {lanes}=lanesOf(z.rings,a,ew);lanes.forEach(l=>total+=l.len);
+  G.zones.forEach((z,k)=>{if(only!=null&&k!==only)return;const o=zopts[k]||{on:true,passes:1};if(!o.on)return;const a=((angles[k]||0)+off)*Math.PI/180;const {lanes}=lanesOf(z.rings,a,ew);lanes.forEach(l=>total+=l.len);
     for(let rp=0;rp<Math.max(1,o.passes|0);rp++){
       cellsOf(lanes).forEach(cl=>cells.push({zone:k,rep:rp,lanes:cl.lanes.map(ln=>({li:idOff+rp*100000+liOff+ln.li,len:ln.x1-ln.x0,P0:unrot([ln.x0,ln.y],a),P1:unrot([ln.x1,ln.y],a)}))}))}
     liOff+=lanes.length});
@@ -589,7 +642,15 @@ function buildPlan(G,base){
   const start0=base||null;
   const p1=passSeq(G,nav,ew,0,start0,0);let zones;
   const mods=Array.from({length:N},(_,i)=>normModel(models[i]));
-  if(!cross){zones=splitSeq(p1.seq,N,v,turn,mods).map(ch=>Object.assign(mkZone(ch,nav,v,turn,ew),{pass:0}))}
+  const robSet=k=>{const o=zopts[k]||{};const a=Array.isArray(o.robots)?o.robots.filter(i=>i<N):[];return a.length?a:Array.from({length:N},(_,i)=>i)};
+  const custom=!cross&&N>1&&G.zones.some((z,k)=>zopts[k]&&zopts[k].on!==false&&robSet(k).length<N);
+  if(custom){
+    // robots choisis par zone : chaque zone est partagée entre ses robots (au prorata de leur capacité), zones traitées de la plus proche à la plus lointaine
+    const per=Array.from({length:N},()=>[]),ref=start0||G.outer[0];
+    const act=G.zones.map((z,k)=>k).filter(k=>(zopts[k]||{}).on!==false).sort((a,b)=>{const pa=zoneLabelPt(G.zones[a])||G.zones[a].outer[0],pb=zoneLabelPt(G.zones[b])||G.zones[b].outer[0];return Math.hypot(pa[0]-ref[0],pa[1]-ref[1])-Math.hypot(pb[0]-ref[0],pb[1]-ref[1])});
+    act.forEach(k=>{const S=robSet(k),sq=passSeq(G,nav,ew,0,start0,(k+1)*1e7,k).seq;if(!sq.length)return;splitSeq(sq,S.length,v,turn,S.map(i=>mods[i])).forEach((ch,j)=>{if(S[j]!=null)per[S[j]].push(...ch)})});
+    zones=per.map(ch=>Object.assign(mkZone(ch,nav,v,turn,ew),{pass:0}))}
+  else if(!cross){zones=splitSeq(p1.seq,N,v,turn,mods).map(ch=>Object.assign(mkZone(ch,nav,v,turn,ew),{pass:0}))}
   else{
     // le passage croisé démarre à l'autre bout du terrain (point du contour le plus éloigné du départ du 1er passage)
     const ref=start0||(p1.seq[0]&&p1.seq[0].A)||G.outer[0];let far=G.outer[0],fd=-1;G.outers.flat().forEach(q=>{const d=Math.hypot(q[0]-ref[0],q[1]-ref[1]);if(d>fd){fd=d;far=q}});
@@ -683,7 +744,7 @@ function draw(){const d=window.devicePixelRatio||1;ctx.setTransform(1,0,0,1,0,0)
 
 const lbl=t=>({mow:'Tonte',charge:'Recharge',travel:'Trajet base'})[t];
 const kpi=(v,l,s)=>'<div class="kpi"><span>'+l+'</span><b>'+v+'</b><small>'+s+'</small></div>';
-function renderStatic(){const s=sim,area=plan.total*plan.ew,rate=area/(s.makespan/60),days=Math.ceil(s.makespan/60/s.win),ch=s.robots.reduce((a,r)=>a+r.charges,0);
+function renderStatic(){$('cost').innerHTML=costHTML(estimateCost(G,zopts,num('tpy')));const s=sim,area=plan.total*plan.ew,rate=area/(s.makespan/60),days=Math.ceil(s.makespan/60/s.win),ch=s.robots.reduce((a,r)=>a+r.charges,0);
   $('kpis').innerHTML=kpi(hm(s.makespan),'Durée','fin à '+clock(s.makespan))+kpi(fmt(rate),'m²/h flotte',plan.cross?'terrain tondu 2 fois (croisé)':fmt(rate/plan.zones.length)+' m²/h par robot')+
     kpi(Math.max(...s.robots.map(r=>r.cycles)),'Cycles batterie',ch+' recharge'+(ch>1?'s':'')+' au total')+kpi(days,days>1?'Jours':'Jour','plage de '+s.win+' h / jour');
   const T=s.makespan;let g='';s.robots.forEach((r,i)=>{g+='<div class="grow"><div class="lab"><i class="dot" style="background:'+COLORS[i]+'"></i>R'+(i+1)+'<small> '+MODELS[r.model||'mk2-10'].short+'</small></div><div class="track">';
@@ -706,9 +767,9 @@ function loop(ts){if(!playing||!sim)return;if(lastTs)tNow+=sim.makespan/num('pac
 function simulateTerrain(t){
   const save={cur,angles:angles.slice(),vals:readSettings(),G,plan,sim,O};
   try{cur=JSON.parse(JSON.stringify(t));if(t.settings)applySettings(t.settings);
-    const g=geo();if(!g.outer||g.area<5)return null;syncAngles(g);const ang=angles.slice(),zo=zopts.map(o=>Object.assign({},o));
+    const g=geo();if(!g.outer||g.area<5)return null;syncAngles(g);const ang=angles.slice(),zo=zopts.map(o=>Object.assign({},o)),cost=estimateCost(g,zopts,num('tpy'));
     const p=buildPlan(g,g.base);const s=schedule(p);
-    return {g,p,s,angles:ang,zopts:zo,robots:N,settings:readSettings(),base:p.base?O.toLL(p.base):null}}
+    return {g,p,s,angles:ang,zopts:zo,cost,robots:N,settings:readSettings(),base:p.base?O.toLL(p.base):null}}
   catch(e){console.error(e);return null}
   finally{cur=save.cur;applySettings(save.vals);angles=save.angles;G=save.G;plan=save.plan;sim=save.sim;O=save.O}}
 function renderReportList(){const box=$('reportList');
@@ -760,12 +821,13 @@ function buildReport(list,title){
   const today=new Date().toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'});
   const logo=(document.querySelector('.brand .logo')||{}).src||'';
   const h=x=>esc(x);
-  const sum=rows.map(({t,r},k)=>'<tr><td><b>'+h(t.name)+'</b></td><td>'+(r?r.g.zones.length:'–')+'</td><td class="n">'+(r?fmt(r.g.area):'–')+' m²</td><td class="n">'+(r?r.robots:'–')+'</td><td class="n">'+(r?hm(r.s.makespan):'–')+'</td><td class="n">'+(r?Math.max(...r.s.robots.map(x=>x.cycles)):'–')+'</td></tr>').join('');
+  const sum=rows.map(({t,r},k)=>'<tr><td><b>'+h(t.name)+'</b></td><td>'+(r?r.g.zones.length:'–')+'</td><td class="n">'+(r?fmt(r.g.area):'–')+' m²</td><td class="n">'+(r?r.robots:'–')+'</td><td class="n">'+(r?hm(r.s.makespan):'–')+'</td><td class="n">'+(r?Math.max(...r.s.robots.map(x=>x.cycles)):'–')+'</td><td class="n">'+(r?eur(r.cost.ser):'–')+'</td><td class="n">'+(r?eur(r.cost.year):'–')+'</td></tr>').join('');
+  const totT=rows.reduce((a,x)=>a+(x.r?x.r.cost.ser:0),0),totY=rows.reduce((a,x)=>a+(x.r?x.r.cost.year:0),0);
   const cards=rows.map(({t,r},k)=>{if(!r)return '<section class="card"><h2>'+h(t.name)+'</h2><p>Terrain incomplet : impossible de le simuler.</p></section>';
     const g=r.g,st=r.settings,exA=g.zones.reduce((a,z)=>a+z.excl.reduce((b,e)=>b+ringArea(e),0),0),exN=g.zones.reduce((a,z)=>a+z.excl.length,0);
     const rl=g.routes.reduce((a,rt)=>{let s=0;for(let i=1;i<rt.length;i++)s+=Math.hypot(rt[i][0]-rt[i-1][0],rt[i][1]-rt[i-1][1]);return a+s},0);
     const area=r.p.total*r.p.ew,rate=area/(r.s.makespan/60);
-    const zl=g.zones.map((z,i)=>'<tr><td><span class="sw" style="background:'+ZCOL[i%ZCOL.length]+'"></span>Zone '+(i+1)+(z.parent>=0?' <small>(dans la zone '+(z.parent+1)+')</small>':'')+'</td><td class="n">'+fmt(z.area)+' m²</td><td class="n">'+((r.zopts[i]||{}).on===false?'<span class="offz">non tondue</span>':((r.zopts[i]||{}).passes||1)+' × · '+(r.angles[i]??'–')+'°')+'</td><td class="n">'+((r.zopts[i]||{}).height||50)+' mm</td><td class="n">'+(z.excl.length||'–')+'</td></tr>').join('');
+    const zl=g.zones.map((z,i)=>'<tr><td><span class="sw" style="background:'+ZCOL[i%ZCOL.length]+'"></span>Zone '+(i+1)+(z.parent>=0?' <small>(dans la zone '+(z.parent+1)+')</small>':'')+((r.zopts[i]||{}).on!==false&&Array.isArray((r.zopts[i]||{}).robots)&&r.zopts[i].robots.length?' <small>· '+r.zopts[i].robots.map(x=>'R'+(x+1)).join(', ')+'</small>':'')+'</td><td class="n">'+fmt(z.area)+' m²</td><td class="n">'+((r.zopts[i]||{}).on===false?'<span class="offz">non tondue</span>':((r.zopts[i]||{}).passes||1)+' × · '+(r.angles[i]??'–')+'°')+'</td><td class="n">'+((r.zopts[i]||{}).height||50)+' mm</td><td class="n">'+(z.excl.length||'–')+'</td></tr>').join('');
     const rob=r.s.robots.map((x,i)=>'<tr><td>R'+(i+1)+' <small>'+MODELS[x.model||'mk2-10'].name+'</small></td><td class="n">'+fmt(r.p.zones[i].area)+' m²</td><td class="n">'+hm(x.mowT)+'</td><td class="n">'+x.cycles+'</td><td class="n">'+hm(x.end)+'</td></tr>').join('');
     return '<section class="card"><div class="ch"><span class="num">'+(k+1)+'</span><div><h2>'+h(t.name)+'</h2><p class="sub">'+h([t.client,t.address].filter(Boolean).join(' · '))+'</p></div><div class="big"><b>'+fmt(g.area)+' m²</b><span>'+fmt(g.area/10000,2)+' ha à tondre</span></div></div>'+
       planSVG(t,r,764,560)+
@@ -773,7 +835,8 @@ function buildReport(list,title){
       '<p class="meta">'+(exN?exN+' zone'+(exN>1?'s':'')+' d’exclusion ('+fmt(exA)+' m²) · ':'')+(g.routes.length?g.routes.length+' route'+(g.routes.length>1?'s':'')+' de passage ('+fmt(rl)+' m) · ':'')+'base de charge '+(t.base?'placée':'automatique')+'</p></div>'+
       '<div><h3>Simulation</h3><div class="kp"><div><b>'+hm(r.s.makespan)+'</b><span>une tonte complète, recharges comprises</span></div><div><b>'+fmt(rate)+'</b><span>m²/h pour la flotte</span></div></div>'+
       '<table><tr><th>Robot</th><th class="n">Surface</th><th class="n">Coupe</th><th class="n">Cycles</th><th class="n">Fini après</th></tr>'+rob+'</table>'+
-      '<p class="meta">'+fleetTxt(r)+' · '+st.speed+' m/s'+(st.cross!=='off'?' · tonte croisée à '+st.cross+'°':'')+'</p></div></div></section>'}).join('');
+      '<p class="meta">'+fleetTxt(r)+' · '+st.speed+' m/s'+(st.cross!=='off'?' · tonte croisée à '+st.cross+'°':'')+'</p></div></div>'+
+      '<div class="costr"><h3>Estimation tarifaire</h3>'+costHTML(r.cost)+'</div></section>'}).join('');
   return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rapport de tonte'+(title?' – '+h(title):'')+'</title>'+
   '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap"><style>'+
   ':root{--g:#2f5216;--a:#558f1f;--ink:#1b2418;--mut:#5b6a55;--line:#d3dccb;--bg:#f3f6ef}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Source Sans 3",system-ui,sans-serif}'+
@@ -787,7 +850,7 @@ function buildReport(list,title){
   '.ch h2{font:700 19px "Chakra Petch",sans-serif;margin:0}.sub{margin:0;color:var(--mut);font-size:13px}.big{margin-left:auto;text-align:right}.big b{display:block;font:700 22px "Chakra Petch",sans-serif;color:var(--a)}.big span{font-size:12px;color:var(--mut)}'+
   '.planw{max-width:100%;margin:0 auto;border-radius:8px;overflow:hidden;background:#1d241b;-webkit-print-color-adjust:exact;print-color-adjust:exact}.plan{position:relative;overflow:hidden;transform-origin:0 0}.plan img{position:absolute;width:256px;height:256px}.plan svg{position:absolute;left:0;top:0;font-family:"Source Sans 3",sans-serif}'+
   '.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}@media(max-width:640px){.cols{grid-template-columns:1fr}.tot{grid-template-columns:1fr}}h3{font:600 13px "Chakra Petch",sans-serif;text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 6px}'+
-  '.offz{color:#b91c1c;font-weight:600}.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:0}.meta{font-size:12px;color:var(--mut);margin:8px 0 0}'+
+  '.offz{color:#b91c1c;font-weight:600}.costr .tot{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:8px}.costr .tot div{background:#fff;padding:8px 12px}.costr .tot b{display:block;font:700 20px "Chakra Petch",sans-serif;color:var(--a)}.costr .tot span{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}.costr .note{font-size:11.5px;color:var(--mut);margin:6px 0 0}.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:0}.meta{font-size:12px;color:var(--mut);margin:8px 0 0}'+
   '.kp{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}.kp div{background:var(--bg);border-radius:8px;padding:8px 10px}.kp b{display:block;font:700 18px "Chakra Petch",sans-serif}.kp span{font-size:11.5px;color:var(--mut)}'+
   '.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--mut)}.legend i{display:inline-block;width:18px;height:10px;margin-right:5px;vertical-align:0;border-radius:2px}'+
   'footer{font-size:11.5px;color:var(--mut);text-align:center}.bar{display:flex;justify-content:flex-end}.bar button{font:600 14px "Chakra Petch",sans-serif;background:var(--a);color:#fff;border:0;border-radius:6px;padding:9px 16px;cursor:pointer}'+
@@ -795,7 +858,8 @@ function buildReport(list,title){
   '</style></head><body><div class="page"><div class="bar"><button onclick="print()">Imprimer / enregistrer en PDF</button></div>'+
   '<header><div><img src="'+logo+'" alt="Novogarden"><h1>Rapport de cartographie et de tonte</h1><p>'+(title?h(title):(clients.length===1?h(clients[0]):'Terrains Novogarden'))+'</p></div><div class="hr">'+today+'<br>Romain Marlier · 06 35 58 47 00<br>contact@novogardenhub.com</div></header>'+
   '<div class="tot"><div><span>Terrains</span><b>'+rows.length+'</b></div><div><span>Surface à tondre</span><b>'+fmt(tot)+' m²</b></div><div><span>Soit</span><b>'+fmt(tot/10000,2)+' ha</b></div></div>'+
-  '<section class="card"><h3>Récapitulatif</h3><table><tr><th>Terrain</th><th>Zones</th><th class="n">Surface</th><th class="n">Robots</th><th class="n">Durée d’une tonte</th><th class="n">Cycles batterie</th></tr>'+sum+'<tr><td><b>Total</b></td><td></td><td class="n"><b>'+fmt(tot)+' m²</b></td><td></td><td></td><td></td></tr></table>'+
+  '<section class="card"><h3>Récapitulatif</h3><table><tr><th>Terrain</th><th>Zones</th><th class="n">Surface</th><th class="n">Robots</th><th class="n">Durée d’une tonte</th><th class="n">Cycles</th><th class="n">Prix / tonte*</th><th class="n">Par an</th></tr>'+sum+'<tr><td><b>Total</b></td><td></td><td class="n"><b>'+fmt(tot)+' m²</b></td><td></td><td></td><td></td><td class="n"><b>'+eur(totT)+'</b></td><td class="n"><b>'+eur(totY)+'</b></td></tr></table>'+
+  '<p class="meta">* Tarif Pack Sérénité ramené à la tonte, selon la grille Novogarden (TTC). « Par an » : nombre de tontes annuel réglé pour chaque terrain.</p>'+
   '<div class="legend" style="margin-top:10px"><span><i style="background:#7fd04b"></i>Zones de tonte (numérotées)</span><span><i style="background:repeating-linear-gradient(45deg,#ef4444 0 3px,rgba(239,68,68,.3) 3px 7px)"></i>Zones d’exclusion</span><span><i style="background:repeating-linear-gradient(90deg,#facc15 0 8px,transparent 8px 12px)"></i>Routes de passage</span></div></section>'+
   cards+'<footer>Simulation Novogarden, robots MK I / MK II (coupe 40,6 cm). Zones grisées : non tondues. Durées indicatives : pente, hauteur d’herbe et météo les font varier. Fond de plan : orthophotos © IGN – Géoplateforme, Licence Ouverte Etalab 2.0.</footer></div></body></html>'}
 
